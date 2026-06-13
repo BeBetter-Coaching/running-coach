@@ -1,0 +1,5 @@
+# AI Hardloopcoach — Fase 1 dependencies.
+# Vastgezet op geteste versies (lokaal Python 3.11, Streamlit Cloud op 3.11).
+# garminconnect 0.3.x heeft een eigen HTTP-client (curl_cffi), geen garth meer.
+streamlit==1.58.0
+garminconnect==0.3.2

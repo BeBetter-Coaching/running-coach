@@ -1,0 +1,19 @@
+# --- Secrets: NOOIT committen ---
+.streamlit/secrets.toml
+.env
+
+# --- Garmin sessie-tokens & dagcache (privé / vluchtig) ---
+data/garmin_tokens/
+data/cache/
+
+# --- Python ---
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- macOS ---
+.DS_Store
