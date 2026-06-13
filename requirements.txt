@@ -3,3 +3,4 @@
 # garminconnect 0.3.x heeft een eigen HTTP-client (curl_cffi), geen garth meer.
 streamlit==1.58.0
 garminconnect==0.3.2
+anthropic==0.109.1

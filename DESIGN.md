@@ -67,12 +67,27 @@ Opgehaald per dag: `get_sleep_data`, `get_hrv_data`, `get_heart_rates`,
 > hebben gezien (bv. `dailySleepDTO.sleepTimeSeconds`, `hrvSummary.lastNightAvg`,
 > `restingHeartRate`, `totalSteps`, `averageStressLevel`).
 
+## Modules (Fase 2/3)
+- `analysis.py` — pure Python berekeningen (geen AI, geen Streamlit). HRV-baseline
+  + afwijking/z-score/streak, slaaptrend, ruwe ACWR (acuut 7d : chronisch
+  weekgemiddelde 28d, o.b.v. `activityTrainingLoad`), weekvolume, en de
+  dagelijkse readiness (`analyze_readiness`).
+- `coach.py` — AI-laag. Wekelijkse duiding via het nieuwste model
+  (`claude-opus-4-8`, adaptive thinking). Dagelijks readiness-advies via het
+  goedkoopste model (`claude-haiku-4-5`) en alleen bij het oranje twijfelgeval;
+  groen/rood krijgen een gratis getemplate advies (twee-traps).
+- Kostenbeheersing: het wekelijkse rapport zit achter een knop + dag-cache;
+  readiness roept Haiku alleen aan bij oranje.
+
 ## Bouwvolgorde
-- **Fase 1 (nu):** Garmin-data binnenhalen + ruw tonen (7 dagen). ✅ in opbouw.
-- **Fase 2:** Python berekent HRV-baseline/afwijking, slaaptrend, ruwe ACWR,
-  weekvolume → één AI-call die dit duidt → wekelijks coach-rapport.
-- **Fase 3+ (alleen schetsen):** dagelijks readiness-advies, schema's in
-  FinalSurge, feedback op uitgevoerde trainingen.
+- **Fase 1:** Garmin-data binnenhalen + ruw tonen (7 dagen). ✅ klaar + gepusht.
+- **Fase 2:** weekanalyse → wekelijks coach-rapport. ✅ gebouwd (AI-call wacht op
+  Anthropic-key voor live test).
+- **Fase 3:** dagelijks readiness-advies (go/no-go-stoplicht). ✅ gebouwd.
+- **Fase 4 (nog niet):** trainingsschema's in FinalSurge — vereist FinalSurge-
+  login (zelfde isolatie als Garmin) + een racedoel.
+- **Fase 5 (nog niet):** feedback op uitgevoerde trainingen (gepland vs.
+  werkelijk).
 
 ## Beveiliging
 - Credentials/tokens nooit in code of git. `secrets.toml`, `.env`,

@@ -317,7 +317,59 @@ class GarminClient:
             raise ValueError(f"Onbekende metric: {metric}")
         return dispatch[metric](date_str)
 
-    # ----------------------- Samengestelde view ---------------------------- #
+    def get_daily_series(
+        self, metric: str, start_str: str, end_str: str
+    ) -> dict[str, MetricResult]:
+        """Eén metric per dag, van start t/m end (inclusief). Gebruikt de dagcache."""
+        d0 = date.fromisoformat(start_str)
+        d1 = date.fromisoformat(end_str)
+        out: dict[str, MetricResult] = {}
+        cur = d0
+        while cur <= d1:
+            ds = cur.isoformat()
+            out[ds] = self.get_daily_metric(metric, ds)
+            cur += timedelta(days=1)
+        return out
+
+    # ----------------------- Samengestelde views --------------------------- #
+    def get_history(self, days: int = 28, end: Optional[date] = None) -> dict:
+        """Historie voor de wekelijkse analyse (Fase 2).
+
+        HRV en slaap per dag (voor baseline/trend) + alle trainingen over de
+        range in één call (voor ACWR en weekvolume).
+
+        Geeft terug:
+            {
+              "dates": [oudste ... nieuwste],
+              "hrv":   {datum: MetricResult},
+              "sleep": {datum: MetricResult},
+              "activities": MetricResult,   # hele range
+            }
+        """
+        end = end or date.today()
+        start = end - timedelta(days=days - 1)
+        start_str, end_str = start.isoformat(), end.isoformat()
+        dates = [(start + timedelta(days=i)).isoformat() for i in range(days)]
+        return {
+            "dates": dates,
+            "hrv": self.get_daily_series("hrv", start_str, end_str),
+            "sleep": self.get_daily_series("sleep", start_str, end_str),
+            "activities": self.get_activities(start_str, end_str),
+        }
+
+    def get_readiness_inputs(self, days: int = 28, end: Optional[date] = None) -> dict:
+        """Input voor het dagelijkse readiness-advies (Fase 3).
+
+        Historie (voor HRV-baseline, slaaptrend, ACWR) + de dagsamenvatting van
+        vandaag (voor Body Battery bij ontwaken en rust-hartslag vs. baseline).
+        """
+        end = end or date.today()
+        return {
+            "date": end.isoformat(),
+            "history": self.get_history(days=days, end=end),
+            "today_summary": self.get_summary(end.isoformat()),
+        }
+
     def get_last_7_days(self, end: Optional[date] = None) -> dict:
         """Haal de ruwe data van de laatste 7 dagen op (Fase 1-scherm).
 
