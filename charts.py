@@ -104,36 +104,5 @@ def weekly_bar(weeks: list[dict], key: str, title: str, color: str = CYAN) -> Op
     )
 
 
-def acwr_chart(acwr_value: Optional[float]) -> Optional[alt.LayerChart]:
-    if acwr_value is None:
-        return None
-    row = "ACWR"
-    zones = pd.DataFrame(
-        [
-            {"x": 0.0, "x2": 0.8, "zone": "laag (detraining)", "kleur": MUTED, "row": row},
-            {"x": 0.8, "x2": 1.3, "zone": "optimaal (sweet spot)", "kleur": GREEN, "row": row},
-            {"x": 1.3, "x2": 1.5, "zone": "verhoogd", "kleur": GOLD, "row": row},
-            {"x": 1.5, "x2": 2.0, "zone": "hoog (blessurerisico)", "kleur": RED, "row": row},
-        ]
-    )
-    bars = alt.Chart(zones).mark_bar(opacity=0.85).encode(
-        x=alt.X(
-            "x:Q",
-            scale=alt.Scale(domain=[0, 2], nice=False),
-            title="ACWR (acuut : chronisch)",
-        ),
-        x2="x2:Q",
-        y=alt.Y("row:N", axis=None, title=None),
-        color=alt.Color("kleur:N", scale=None, legend=None),
-        tooltip=[alt.Tooltip("zone:N", title="Zone")],
-    )
-    marker = (
-        alt.Chart(pd.DataFrame({"x": [acwr_value], "row": [row]}))
-        .mark_tick(color=TEXT, thickness=3, size=46)
-        .encode(
-            x="x:Q",
-            y=alt.Y("row:N", axis=None),
-            tooltip=[alt.Tooltip("x:Q", title="Jouw ACWR", format=".2f")],
-        )
-    )
-    return alt.layer(bars, marker).properties(height=90, width="container")
+# (ACWR wordt nu als begrijpelijke '% van je normale week'-balk in de app
+#  getoond, zie render_load_meter in app.py — geen Altair-chart meer.)

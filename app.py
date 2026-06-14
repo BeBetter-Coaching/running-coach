@@ -100,6 +100,46 @@ def chart_or_caption(chart, empty: str = "—") -> None:
         st.caption(empty)
 
 
+def _load_phrase(acwr: Optional[float]) -> str:
+    if acwr is None:
+        return "—"
+    if acwr < 0.8:
+        return "rustiger dan normaal"
+    if acwr <= 1.3:
+        return "in balans (veilige opbouw)"
+    if acwr <= 1.5:
+        return "snelle opbouw — let op"
+    return "grote sprong — blessurerisico"
+
+
+def render_load_meter(acwr: Optional[float]) -> None:
+    """Begrijpelijke weergave van de acute:chronische belasting (ACWR).
+
+    Vertaald naar '% van je normale week' met de 100%-baseline en de veilige
+    zone. Een robuuste HTML-balk i.p.v. een fragiele chart.
+    """
+    if acwr is None:
+        st.caption("Nog niet genoeg data voor de belasting.")
+        return
+    pct = round(acwr * 100)
+    pos = max(0.0, min(100.0, acwr / 2 * 100))
+    st.markdown(f"**{pct}% van je normale week** · {_load_phrase(acwr)}")
+    bar = (
+        '<div style="position:relative;height:30px;border-radius:6px;overflow:hidden;display:flex;">'
+        f'<div style="width:40%;background:{charts.MUTED};"></div>'
+        f'<div style="width:25%;background:{charts.GREEN};"></div>'
+        f'<div style="width:10%;background:{charts.GOLD};"></div>'
+        f'<div style="width:25%;background:{charts.RED};"></div>'
+        '<div style="position:absolute;left:50%;top:0;bottom:0;border-left:2px dashed #EAF2FF;opacity:.6;"></div>'
+        f'<div style="position:absolute;left:{pos:.0f}%;top:0;bottom:0;border-left:3px solid #FFFFFF;"></div>'
+        '</div>'
+        f'<div style="display:flex;justify-content:space-between;font-size:0.72rem;color:{charts.MUTED};margin-top:6px;">'
+        '<span>rustiger</span><span>↑ normaal (100%)</span><span>risico</span></div>'
+    )
+    st.markdown(bar, unsafe_allow_html=True)
+    st.caption("100% = je gemiddelde week (laatste 4 weken). 80–130% is de veilige zone.")
+
+
 def render_raw(label: str, result) -> None:
     icon = "✅" if result.ok else "⚠️"
     cache_note = " · uit cache" if getattr(result, "from_cache", False) else ""
@@ -277,7 +317,12 @@ def render_dashboard_page() -> None:
             delta=f"{hrv['deviation_from_baseline']:+} vs baseline",
             delta_color="off",
         )
-    c3.metric("ACWR", fmt(acwr.get("acwr")), help=acwr.get("zone", ""))
+    _lv = acwr.get("acwr")
+    c3.metric(
+        "Belasting vs normaal",
+        fmt(round(_lv * 100) if _lv is not None else None, "%"),
+        help="Trainingsbelasting deze week t.o.v. je gemiddelde week (4 weken = 100%).",
+    )
     c4.metric("Volume (7d)", fmt(weeks[0]["km"] if weeks else None, " km"))
 
     st.divider()
@@ -292,13 +337,8 @@ def render_dashboard_page() -> None:
         st.subheader("Slaap per nacht")
         chart_or_caption(charts.sleep_chart(analysis.sleep_hours_series(history)), "Nog geen slaapdata.")
     with col_b:
-        st.subheader("Acute : chronische belasting")
-        ch = charts.acwr_chart(acwr.get("acwr"))
-        if ch is not None:
-            st.altair_chart(ch, width="stretch")
-            st.caption(f"Zone: {acwr.get('zone', '—')}")
-        else:
-            st.caption("Nog niet genoeg data voor ACWR.")
+        st.subheader("Opbouw — belasting vs. je normale week")
+        render_load_meter(acwr.get("acwr"))
 
     st.subheader("Volume per week")
     col_c, col_d = st.columns(2)
