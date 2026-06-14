@@ -176,6 +176,10 @@ if st.sidebar.button("🔄 Data verversen (vandaag)"):
     load_week.clear()
     load_history.clear()
     load_readiness.clear()
+    # Ook de dagelijkse AI-uitvoer wissen, zodat readiness-advies en bijsturing
+    # opnieuw berekend worden met de verse data.
+    for _k in [k for k in st.session_state if k.startswith(("adjust_", "readiness_advice_"))]:
+        del st.session_state[_k]
     st.rerun()
 
 st.sidebar.divider()
