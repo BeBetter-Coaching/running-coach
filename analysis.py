@@ -12,9 +12,14 @@ er geen harde koppeling met de client-laag nodig is.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from statistics import mean, pstdev
 from typing import Any, Optional
+
+# Drempels voor "zware sessie" op basis van Garmin Training Effect (schaal 0–5).
+# Easy duurlopen zitten rond aerobic TE 2; tempo/drempel/intervallen/races hoger.
+HARD_AEROBIC_TE = 3.5
+HARD_ANAEROBIC_TE = 2.0
 
 
 # --------------------------------------------------------------------------- #
@@ -51,6 +56,47 @@ def _act_km(a: dict) -> float:
 
 def _is_run(a: dict) -> bool:
     return "run" in (_dig(a, "activityType", "typeKey", default="") or "")
+
+
+def _act_datetime(a: dict) -> Optional[datetime]:
+    s = a.get("startTimeLocal") or ""
+    try:
+        return datetime.strptime(s[:19], "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+
+
+def _is_hard(a: dict) -> bool:
+    aero = a.get("aerobicTrainingEffect")
+    anaero = a.get("anaerobicTrainingEffect")
+    aero = float(aero) if _is_num(aero) else 0.0
+    anaero = float(anaero) if _is_num(anaero) else 0.0
+    return aero >= HARD_AEROBIC_TE or anaero >= HARD_ANAEROBIC_TE
+
+
+def most_recent_hard_session(acts: list[dict], now: Optional[datetime] = None) -> Optional[dict]:
+    """De meest recente zware training (hoog Training Effect) en hoe lang geleden."""
+    now = now or datetime.now()
+    best: Optional[dict] = None
+    for a in acts:
+        if not _is_hard(a):
+            continue
+        dt = _act_datetime(a)
+        if dt is None:
+            continue
+        hours = (now - dt).total_seconds() / 3600.0
+        if hours < 0:
+            continue
+        if best is None or hours < best["hours_ago"]:
+            best = {
+                "hours_ago": round(hours, 1),
+                "name": a.get("activityName")
+                or _dig(a, "activityType", "typeKey", default="training"),
+                "aerobic_te": round(float(a.get("aerobicTrainingEffect") or 0), 1),
+                "anaerobic_te": round(float(a.get("anaerobicTrainingEffect") or 0), 1),
+                "training_load": round(float(a.get("activityTrainingLoad") or 0), 1),
+            }
+    return best
 
 
 # --------------------------------------------------------------------------- #
@@ -224,7 +270,12 @@ def analyze_volume(acts: list[dict], end: Optional[date] = None, weeks: int = 4)
 # --------------------------------------------------------------------------- #
 # Dagelijkse readiness (Fase 3) — pure drempelwaarden, geen AI
 # --------------------------------------------------------------------------- #
-def analyze_readiness(history: dict, today_summary, end: Optional[date] = None) -> dict:
+def analyze_readiness(
+    history: dict,
+    today_summary,
+    end: Optional[date] = None,
+    now: Optional[datetime] = None,
+) -> dict:
     """Bepaal een go/no-go-stoplicht voor vandaag uit de berekende signalen.
 
     `today_summary` is een MetricResult (of dict) van de dagsamenvatting van
@@ -245,10 +296,13 @@ def analyze_readiness(history: dict, today_summary, end: Optional[date] = None) 
     rhr_base = summary.get("lastSevenDaysAvgRestingHeartRate")
     rhr_delta = (rhr - rhr_base) if (_is_num(rhr) and _is_num(rhr_base)) else None
 
-    acwr = analyze_acwr(activities_list(history), end)
+    acts = activities_list(history)
+    acwr = analyze_acwr(acts, end)
+    hard = most_recent_hard_session(acts, now)
 
     red: list[str] = []
     amber: list[str] = []
+    notes: list[str] = []
 
     # HRV
     if hrv.get("available"):
@@ -290,6 +344,22 @@ def analyze_readiness(history: dict, today_summary, end: Optional[date] = None) 
         elif ratio is not None and (ratio > 1.3 or ratio < 0.8):
             amber.append(f"ACWR {ratio} — {acwr.get('zone')}.")
 
+    # Recente zware sessie (Training Effect): herstelcijfers mogen vandaag niet
+    # "groen, ram erop" zeggen vlak na een harde inspanning.
+    if hard:
+        h = hard["hours_ago"]
+        te = f"Training Effect {hard['aerobic_te']}/{hard['anaerobic_te']}"
+        if h <= 24:
+            amber.append(
+                f"Zware sessie pas {h:.0f}u geleden ({hard['name']}, {te}) — "
+                "vandaag easy of rust, ongeacht je herstelcijfers."
+            )
+        elif h <= 48:
+            notes.append(
+                f"Zware sessie ~{h:.0f}u geleden ({hard['name']}, {te}) — "
+                "bouw vandaag rustig op."
+            )
+
     if red:
         light = "red"
     elif amber:
@@ -297,11 +367,14 @@ def analyze_readiness(history: dict, today_summary, end: Optional[date] = None) 
     else:
         light = "green"
 
+    base_reasons = red + amber if (red or amber) else ["Alle signalen in orde."]
+
     return {
         "date": end.isoformat(),
         "light": light,
-        "reasons": red + amber if (red or amber) else ["Alle signalen in orde."],
+        "reasons": base_reasons + notes,
         "signals": {
+            "last_hard_session": hard,
             "hrv": hrv,
             "sleep_last_night_h": last_sleep,
             "sleep_avg_7d_h": sleep_avg7,
