@@ -25,6 +25,7 @@ import store
 import planner
 from coach import (
     generate_coach_report,
+    generate_week_plan,
     build_flags,
     daily_readiness_advice,
     readiness_template,
@@ -163,7 +164,7 @@ def render_raw(label: str, result) -> None:
 st.sidebar.title("🏃 Hardloopcoach")
 page = st.sidebar.radio(
     "Weergave",
-    ["🟢 Vandaag", "📈 Dashboard", "🎯 Planning", "🧠 Coach-rapport", "📊 Ruwe data (7 dagen)"],
+    ["🟢 Vandaag", "📈 Dashboard", "🎯 Planning", "🗓️ Weekplan", "🧠 Coach-rapport", "📊 Ruwe data (7 dagen)"],
 )
 
 if st.sidebar.button("🔄 Data verversen (vandaag)"):
@@ -673,6 +674,64 @@ def render_planning_page() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Pagina: Weekplan (Fase C)
+# --------------------------------------------------------------------------- #
+def render_weekplan_page() -> None:
+    st.title("Weekplan")
+    st.caption("De concrete week — jouw stramien ingevuld per fase, met je readiness erin.")
+    gh_token = get_secret("GH_TOKEN")
+    athlete_key = get_secret("fs_user_key")
+    api_key = get_secret("anthropic_api_key")
+    plan = store.load_plan(athlete_key, gh_token) if athlete_key else {}
+    if not plan.get("races"):
+        st.info("Vul eerst je races en voorkeuren in op de 🎯 Planning-pagina.")
+        return
+
+    try:
+        wv = analysis.analyze_history(load_history(28))["volume"]["weeks"]
+        cur_km = round(sum(w["km"] for w in wv) / len(wv)) if wv else 90
+    except Exception:
+        cur_km = 90
+    weeks = planner.build_skeleton(plan, cur_km)["weken"]
+    if not weeks:
+        st.info("Geen weken in het skelet — staan je race-datums goed?")
+        return
+
+    labels = [f"{w['week_start']} · {w['fase']}" for w in weeks]
+    default_idx = 1 if len(weeks) > 1 else 0
+    idx = st.selectbox(
+        "Welke week?", range(len(weeks)), index=default_idx, format_func=lambda i: labels[i]
+    )
+    week = weeks[idx]
+    st.caption(f"Fase: **{week['fase']}** · doel {week['doel_km']} km · {week['focus']}")
+
+    readiness_inputs = load_readiness(28)
+    readiness = analysis.analyze_readiness(
+        readiness_inputs["history"], readiness_inputs["today_summary"]
+    )
+
+    state_key = f"weekplan_{week['week_start']}"
+    col_a, col_b = st.columns([1, 3])
+    generate = col_a.button("🗓️ Genereer weekplan", type="primary")
+    if col_b.button("↻ Opnieuw genereren"):
+        st.session_state.pop(state_key, None)
+        generate = True
+
+    if generate and state_key not in st.session_state:
+        if not api_key:
+            st.warning("Zet `anthropic_api_key` in je secrets om het weekplan te genereren.")
+        else:
+            with st.spinner("De coach bouwt je week…"):
+                try:
+                    st.session_state[state_key] = generate_week_plan(week, readiness, plan, api_key)
+                except CoachError as e:
+                    st.error(str(e))
+
+    if state_key in st.session_state:
+        st.markdown(st.session_state[state_key])
+
+
+# --------------------------------------------------------------------------- #
 # Router
 # --------------------------------------------------------------------------- #
 if page.startswith("🟢"):
@@ -681,6 +740,8 @@ elif page.startswith("📈"):
     render_dashboard_page()
 elif page.startswith("🎯"):
     render_planning_page()
+elif page.startswith("🗓️"):
+    render_weekplan_page()
 elif page.startswith("🧠"):
     render_coach_page()
 else:

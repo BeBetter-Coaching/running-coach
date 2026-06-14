@@ -170,6 +170,92 @@ def daily_readiness_advice(readiness: dict, api_key: Optional[str]) -> str:
     return text or readiness_template(readiness)
 
 
+WEEK_SYSTEM_PROMPT = """\
+Je bent de ervaren hardloopcoach van Jip en bouwt ÉÉN concrete trainingsweek.
+
+HARDE REGELS:
+- Houd je STRIKT aan zijn vaste weekstramien: welke dag wat (inclusief dubbels,
+  ochtend/avond). Vul dat in passend bij de FASE van deze week.
+- Minimaal 90 km in de week (tenzij het een vakantieweek is). Een deload verlaagt
+  de INTENSITEIT, niet de omvang — houd het volume dan op de basis.
+- Stem de intensiteit af op zijn READINESS: bij oranje/rood minder of geen
+  kwaliteit (verzacht of verschuif sleutelsessies); bij groen is er ruimte.
+- Gebruik zijn zone-taal (Z1 t/m Z5) en verwijs naar concreet racetempo waar
+  relevant (leid dat af uit zijn doeltijden).
+
+Schrijf per dag de sessie(s) concreet: afstand of duur, structuur (bv. 2x15'
+threshold Z3) en zone/tempo. Markeer dubbels duidelijk. Sluit af met 1–2 zinnen
+waarom de week zo is opgebouwd. Nederlands, bondig, geen emoji.
+"""
+
+
+def generate_week_plan(
+    week: dict,
+    readiness: dict,
+    plan: dict,
+    api_key: Optional[str],
+    model: str = MODEL_DUIDING,
+) -> str:
+    """Genereer één concrete trainingsweek (Fase C) — fase + readiness + stramien."""
+    client = _client(api_key)
+    voork = plan.get("voorkeuren", {}) or {}
+    races = plan.get("races", []) or []
+    races_txt = (
+        "; ".join(
+            f"{r.get('naam')} ({r.get('datum')}, {r.get('afstand')}, prio "
+            f"{r.get('prioriteit')}, doel {r.get('doeltijd', '?')})"
+            for r in races
+        )
+        or "geen"
+    )
+    light = {"green": "GROEN", "amber": "ORANJE", "red": "ROOD"}.get(
+        readiness.get("light"), readiness.get("light", "")
+    )
+    reasons = "; ".join((readiness.get("reasons") or [])[:3])
+
+    user = f"""FASE-SKELET VAN DEZE WEEK (week vanaf {week.get('week_start')}):
+- Fase: {week.get('fase')}
+- Doel weekvolume: {week.get('doel_km')} km
+- Focus: {week.get('focus')}
+- Races deze week: {', '.join(week.get('races', [])) or 'geen'}
+- Notitie: {week.get('notitie') or '-'}
+
+VAST WEEKSTRAMIEN (volg dit strikt qua dag-structuur):
+{voork.get('overig') or '(geen stramien opgegeven)'}
+
+VOORKEUREN: {voork.get('trainingsdagen_per_week', '?')} trainingsdagen/week, \
+~{voork.get('tijd_per_training_min', '?')} min/sessie, flexibiliteit \
+{voork.get('flexibiliteit', '?')}. Leuk: {', '.join(voork.get('types_leuk', []))}. \
+Liever niet: {', '.join(voork.get('types_niet_leuk', []))}.
+
+RACEDOELEN (voor tempo's): {races_txt}
+
+READINESS VANDAAG: {light}{(' — ' + reasons) if reasons else ''}
+
+Bouw nu de concrete week."""
+
+    try:
+        response = client.messages.create(
+            model=model,
+            max_tokens=3000,
+            thinking={"type": "adaptive"},
+            output_config={"effort": "high"},
+            system=WEEK_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user}],
+        )
+    except anthropic.AuthenticationError:
+        raise CoachError("Anthropic API-key ongeldig. Controleer `anthropic_api_key`.")
+    except anthropic.RateLimitError:
+        raise CoachError("Anthropic rate limit bereikt. Probeer het zo opnieuw.")
+    except anthropic.APIError as e:
+        raise CoachError(f"Anthropic API-fout: {e}")
+
+    text = "".join(b.text for b in response.content if b.type == "text").strip()
+    if not text:
+        raise CoachError("De AI gaf een leeg weekplan terug.")
+    return text
+
+
 def _client(api_key: Optional[str]) -> anthropic.Anthropic:
     if not api_key:
         raise CoachError(
