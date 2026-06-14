@@ -18,6 +18,7 @@ import streamlit as st
 from garmin_client import GarminClient, GarminClientError
 import analysis
 import publish
+import charts
 from coach import (
     generate_coach_report,
     build_flags,
@@ -105,7 +106,7 @@ def render_raw(label: str, result) -> None:
 st.sidebar.title("🏃 Hardloopcoach")
 page = st.sidebar.radio(
     "Weergave",
-    ["🟢 Vandaag", "🧠 Coach-rapport", "📊 Ruwe data (7 dagen)"],
+    ["🟢 Vandaag", "📈 Dashboard", "🧠 Coach-rapport", "📊 Ruwe data (7 dagen)"],
 )
 
 if st.sidebar.button("🔄 Data verversen (vandaag)"):
@@ -236,6 +237,72 @@ def render_today_page() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Pagina: Dashboard (grafieken)
+# --------------------------------------------------------------------------- #
+def render_dashboard_page() -> None:
+    st.title("Dashboard")
+    history = load_history(28)
+    report = analysis.analyze_history(history)
+    readiness_inputs = load_readiness(28)
+    readiness = analysis.analyze_readiness(
+        readiness_inputs["history"], readiness_inputs["today_summary"]
+    )
+
+    hrv = report["hrv"]
+    acwr = report["acwr"]
+    weeks = report["volume"]["weeks"]
+    light_txt = {"green": "🟢 Groen", "amber": "🟡 Oranje", "red": "🔴 Rood"}.get(
+        readiness["light"], readiness["light"]
+    )
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Readiness vandaag", light_txt)
+    if hrv.get("available"):
+        c2.metric(
+            "HRV",
+            fmt(hrv["current"]),
+            delta=f"{hrv['deviation_from_baseline']:+} vs baseline",
+            delta_color="off",
+        )
+    c3.metric("ACWR", fmt(acwr.get("acwr")), help=acwr.get("zone", ""))
+    c4.metric("Volume (7d)", fmt(weeks[0]["km"] if weeks else None, " km"))
+
+    st.divider()
+    st.subheader("HRV-trend — met je baseline-band")
+    ch = charts.hrv_chart(
+        analysis.hrv_series(history), hrv.get("baseline_mean"), hrv.get("baseline_sd")
+    )
+    st.altair_chart(ch, width="stretch") if ch is not None else st.caption(
+        "Nog geen HRV-data."
+    )
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.subheader("Slaap per nacht")
+        ch = charts.sleep_chart(analysis.sleep_hours_series(history))
+        st.altair_chart(ch, width="stretch") if ch is not None else st.caption(
+            "Nog geen slaapdata."
+        )
+    with col_b:
+        st.subheader("Acute : chronische belasting")
+        ch = charts.acwr_chart(acwr.get("acwr"))
+        if ch is not None:
+            st.altair_chart(ch, width="stretch")
+            st.caption(f"Zone: {acwr.get('zone', '—')}")
+        else:
+            st.caption("Nog niet genoeg data voor ACWR.")
+
+    st.subheader("Volume per week")
+    col_c, col_d = st.columns(2)
+    with col_c:
+        ch = charts.weekly_bar(weeks, "km", "Afstand (km)", charts.CYAN)
+        st.altair_chart(ch, width="stretch") if ch is not None else st.caption("—")
+    with col_d:
+        ch = charts.weekly_bar(weeks, "training_load", "Trainingsbelasting", charts.GOLD)
+        st.altair_chart(ch, width="stretch") if ch is not None else st.caption("—")
+
+
+# --------------------------------------------------------------------------- #
 # Pagina: Coach-rapport (Fase 2)
 # --------------------------------------------------------------------------- #
 def render_coach_page() -> None:
@@ -281,7 +348,7 @@ def render_coach_page() -> None:
             }
             for w in weeks
         ],
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
@@ -428,6 +495,8 @@ def render_raw_page() -> None:
 # --------------------------------------------------------------------------- #
 if page.startswith("🟢"):
     render_today_page()
+elif page.startswith("📈"):
+    render_dashboard_page()
 elif page.startswith("🧠"):
     render_coach_page()
 else:

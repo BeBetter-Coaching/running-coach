@@ -1,0 +1,9 @@
+# Visuele stijl — afgestemd op de BeBetter Coaching-app, zodat de hardloopcoach
+# als één familie voelt. (secrets.toml staat apart en wordt niet gecommit.)
+[theme]
+base = "dark"
+primaryColor = "#5EE6EB"
+backgroundColor = "#081830"
+secondaryBackgroundColor = "#0E2547"
+textColor = "#EAF2FF"
+font = "sans serif"
