@@ -76,6 +76,19 @@ def load_readiness(days: int = 28) -> dict:
     return get_client().get_readiness_inputs(days=days)
 
 
+# Bij een nieuwe dag automatisch verse data: wis de caches + dagelijkse AI-uitvoer
+# de eerste keer dat de app op een nieuwe kalenderdag draait. Zo is 's ochtends
+# alles vers zonder dat je iets hoeft te klikken.
+_today_iso = date.today().isoformat()
+if st.session_state.get("_cache_day") != _today_iso:
+    load_week.clear()
+    load_history.clear()
+    load_readiness.clear()
+    for _k in [k for k in st.session_state if k.startswith(("adjust_", "readiness_advice_"))]:
+        del st.session_state[_k]
+    st.session_state["_cache_day"] = _today_iso
+
+
 # --------------------------------------------------------------------------- #
 # Hulpjes
 # --------------------------------------------------------------------------- #
