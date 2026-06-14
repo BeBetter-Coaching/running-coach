@@ -2,10 +2,11 @@
 .streamlit/secrets.toml
 .env
 
-# --- Garmin sessie-tokens, dagcache & lokale publicatie-voorbeelden ---
+# --- Garmin sessie-tokens, dagcache, voorbeelden & lokale opslag-fallback ---
 data/garmin_tokens/
 data/cache/
 data/published/
+data/.*.json
 
 # --- Python ---
 .venv/

@@ -16,9 +16,12 @@ from typing import Any, Optional
 import streamlit as st
 
 from garmin_client import GarminClient, GarminClientError
+import pandas as pd
+
 import analysis
 import publish
 import charts
+import store
 from coach import (
     generate_coach_report,
     build_flags,
@@ -159,7 +162,7 @@ def render_raw(label: str, result) -> None:
 st.sidebar.title("🏃 Hardloopcoach")
 page = st.sidebar.radio(
     "Weergave",
-    ["🟢 Vandaag", "📈 Dashboard", "🧠 Coach-rapport", "📊 Ruwe data (7 dagen)"],
+    ["🟢 Vandaag", "📈 Dashboard", "🎯 Planning", "🧠 Coach-rapport", "📊 Ruwe data (7 dagen)"],
 )
 
 if st.sidebar.button("🔄 Data verversen (vandaag)"):
@@ -537,12 +540,114 @@ def render_raw_page() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Pagina: Planning & profiel (Fase A)
+# --------------------------------------------------------------------------- #
+_AFSTANDEN = ["5K", "10K", "15K", "10 EM", "Halve marathon", "30K", "Marathon", "Trail", "Anders"]
+_PRIOS = ["A", "B", "C"]
+_KAL_TYPES = ["Vakantie", "Lichte week", "Druk/weinig tijd", "Niet beschikbaar", "Hoogtestage", "Anders"]
+_TYPES = ["Lange duurloop", "Rustige duurloop", "Intervallen", "Tempo/drempel", "Heuvels", "Baan", "Parkrun", "Kracht"]
+_RACE_COLS = ["naam", "datum", "afstand", "prioriteit", "doeltijd"]
+_KAL_COLS = ["type", "van", "tot", "notitie"]
+
+
+def render_planning_page() -> None:
+    st.title("Planning & profiel")
+    st.caption(
+        "Je races, kalender en voorkeuren — de basis waarop de coach straks je "
+        "periodisering (lange termijn) en weekschema's (korte termijn) maakt."
+    )
+    gh_token = get_secret("GH_TOKEN")
+    athlete_key = get_secret("fs_user_key")
+    if not athlete_key:
+        st.warning("Vul `fs_user_key` in je secrets in om je planning te kunnen opslaan.")
+    plan = store.load_plan(athlete_key, gh_token) if athlete_key else {}
+
+    st.subheader("🎯 Doel-races")
+    st.caption("Prioriteit A = je belangrijkste race(s); B/C = tussendoelen.")
+    races_edited = st.data_editor(
+        pd.DataFrame(plan.get("races") or [], columns=_RACE_COLS),
+        num_rows="dynamic",
+        width="stretch",
+        key="races_ed",
+        column_config={
+            "naam": st.column_config.TextColumn("Race"),
+            "datum": st.column_config.TextColumn("Datum (JJJJ-MM-DD)"),
+            "afstand": st.column_config.SelectboxColumn("Afstand", options=_AFSTANDEN),
+            "prioriteit": st.column_config.SelectboxColumn("Prioriteit", options=_PRIOS),
+            "doeltijd": st.column_config.TextColumn("Doeltijd (optioneel)"),
+        },
+    )
+
+    st.subheader("📅 Kalender")
+    st.caption("Vakanties, lichte of drukke periodes, niet-beschikbare weken.")
+    kal_edited = st.data_editor(
+        pd.DataFrame(plan.get("kalender") or [], columns=_KAL_COLS),
+        num_rows="dynamic",
+        width="stretch",
+        key="kal_ed",
+        column_config={
+            "type": st.column_config.SelectboxColumn("Type", options=_KAL_TYPES),
+            "van": st.column_config.TextColumn("Van (JJJJ-MM-DD)"),
+            "tot": st.column_config.TextColumn("Tot (JJJJ-MM-DD)"),
+            "notitie": st.column_config.TextColumn("Notitie"),
+        },
+    )
+
+    st.subheader("⚙️ Voorkeuren")
+    v = plan.get("voorkeuren") or {}
+    c1, c2, c3 = st.columns(3)
+    dagen = c1.number_input("Trainingsdagen/week", 1, 14, int(v.get("trainingsdagen_per_week", 5)))
+    tijd = c2.number_input("Tijd per training (min)", 20, 240, int(v.get("tijd_per_training_min", 60)), step=5)
+    _flex_opts = ["streng", "gemiddeld", "flexibel"]
+    flex = c3.selectbox(
+        "Flexibiliteit",
+        _flex_opts,
+        index=_flex_opts.index(v.get("flexibiliteit", "gemiddeld")) if v.get("flexibiliteit") in _flex_opts else 1,
+    )
+    leuk = st.multiselect("Wat je graag doet", _TYPES, default=[t for t in v.get("types_leuk", []) if t in _TYPES])
+    niet = st.multiselect("Wat je liever niet doet", _TYPES, default=[t for t in v.get("types_niet_leuk", []) if t in _TYPES])
+    overig = st.text_area(
+        "Overige voorkeuren / vaste instructies",
+        value=v.get("overig", ""),
+        placeholder="bv. zondag lange duurloop, geen baan, niet 2 zware dagen op rij",
+    )
+
+    if st.button("💾 Planning opslaan", type="primary", disabled=not athlete_key):
+        def _records(df: pd.DataFrame, key_field: str) -> list[dict]:
+            recs = df.fillna("").to_dict("records")
+            return [r for r in recs if str(r.get(key_field, "")).strip()]
+
+        new_plan = {
+            "races": _records(races_edited, "naam"),
+            "kalender": _records(kal_edited, "type"),
+            "voorkeuren": {
+                "trainingsdagen_per_week": int(dagen),
+                "tijd_per_training_min": int(tijd),
+                "flexibiliteit": flex,
+                "types_leuk": leuk,
+                "types_niet_leuk": niet,
+                "overig": overig.strip(),
+            },
+        }
+        ok, msg = store.save_plan(athlete_key, new_plan, gh_token)
+        if ok:
+            st.success("Planning opgeslagen." + (f" {msg}" if msg else ""))
+        else:
+            st.error(f"Opslaan mislukt: {msg}")
+
+    if plan.get("updated_at"):
+        st.caption(f"Laatst opgeslagen: {plan['updated_at']}")
+
+
+# --------------------------------------------------------------------------- #
 # Router
 # --------------------------------------------------------------------------- #
 if page.startswith("🟢"):
     render_today_page()
 elif page.startswith("📈"):
     render_dashboard_page()
+elif page.startswith("🎯"):
+    render_planning_page()
 elif page.startswith("🧠"):
     render_coach_page()
 else:
