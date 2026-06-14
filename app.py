@@ -22,6 +22,7 @@ import analysis
 import publish
 import charts
 import store
+import planner
 from coach import (
     generate_coach_report,
     build_flags,
@@ -612,31 +613,63 @@ def render_planning_page() -> None:
         placeholder="bv. zondag lange duurloop, geen baan, niet 2 zware dagen op rij",
     )
 
-    if st.button("💾 Planning opslaan", type="primary", disabled=not athlete_key):
-        def _records(df: pd.DataFrame, key_field: str) -> list[dict]:
-            recs = df.fillna("").to_dict("records")
-            return [r for r in recs if str(r.get(key_field, "")).strip()]
+    def _records(df: pd.DataFrame, key_field: str) -> list[dict]:
+        recs = df.fillna("").to_dict("records")
+        return [r for r in recs if str(r.get(key_field, "")).strip()]
 
-        new_plan = {
-            "races": _records(races_edited, "naam"),
-            "kalender": _records(kal_edited, "type"),
-            "voorkeuren": {
-                "trainingsdagen_per_week": int(dagen),
-                "tijd_per_training_min": int(tijd),
-                "flexibiliteit": flex,
-                "types_leuk": leuk,
-                "types_niet_leuk": niet,
-                "overig": overig.strip(),
-            },
-        }
-        ok, msg = store.save_plan(athlete_key, new_plan, gh_token)
+    live_plan = {
+        "races": _records(races_edited, "naam"),
+        "kalender": _records(kal_edited, "type"),
+        "voorkeuren": {
+            "trainingsdagen_per_week": int(dagen),
+            "tijd_per_training_min": int(tijd),
+            "flexibiliteit": flex,
+            "types_leuk": leuk,
+            "types_niet_leuk": niet,
+            "overig": overig.strip(),
+        },
+    }
+
+    if st.button("💾 Planning opslaan", type="primary", disabled=not athlete_key):
+        ok, msg = store.save_plan(athlete_key, live_plan, gh_token)
         if ok:
             st.success("Planning opgeslagen." + (f" {msg}" if msg else ""))
         else:
             st.error(f"Opslaan mislukt: {msg}")
-
     if plan.get("updated_at"):
         st.caption(f"Laatst opgeslagen: {plan['updated_at']}")
+
+    # ----- Periodisering-skelet (Fase B) — leeft mee met wat je hierboven invult #
+    st.divider()
+    st.subheader("📈 Periodisering — skelet tot je laatste race")
+    if not live_plan["races"]:
+        st.caption("Voeg races met een datum toe om het skelet te genereren.")
+    else:
+        try:
+            wv = analysis.analyze_history(load_history(28))["volume"]["weeks"]
+            cur_km = round(sum(w["km"] for w in wv) / len(wv)) if wv else 60
+        except Exception:
+            cur_km = 60
+        sk = planner.build_skeleton(live_plan, cur_km)
+        st.caption(
+            f"Basisvolume uit Garmin (~4 wk gem.): {sk['base_km']} km. Fase, doel-km "
+            "en focus per week — de basis voor je concrete weken (Fase C)."
+        )
+        st.dataframe(
+            [
+                {
+                    "week vanaf": w["week_start"],
+                    "fase": w["fase"],
+                    "doel km": w["doel_km"],
+                    "focus": w["focus"],
+                    "races": ", ".join(w["races"]),
+                    "notitie": w["notitie"],
+                }
+                for w in sk["weken"]
+            ],
+            width="stretch",
+            hide_index=True,
+        )
 
 
 # --------------------------------------------------------------------------- #
