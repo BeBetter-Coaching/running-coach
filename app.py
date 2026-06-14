@@ -87,6 +87,19 @@ def fmt(value: Any, suffix: str = "") -> str:
     return f"{value}{suffix}" if value is not None else "—"
 
 
+def chart_or_caption(chart, empty: str = "—") -> None:
+    """Toon een Altair-chart, of een nette caption als er geen data is.
+
+    Bewust een functie (geen ternaire expressie): een kale `A if c else B`-regel
+    wordt door Streamlit's magic naar het scherm geschreven; een functie-aanroep
+    niet.
+    """
+    if chart is not None:
+        st.altair_chart(chart, width="stretch")
+    else:
+        st.caption(empty)
+
+
 def render_raw(label: str, result) -> None:
     icon = "✅" if result.ok else "⚠️"
     cache_note = " · uit cache" if getattr(result, "from_cache", False) else ""
@@ -272,17 +285,12 @@ def render_dashboard_page() -> None:
     ch = charts.hrv_chart(
         analysis.hrv_series(history), hrv.get("baseline_mean"), hrv.get("baseline_sd")
     )
-    st.altair_chart(ch, width="stretch") if ch is not None else st.caption(
-        "Nog geen HRV-data."
-    )
+    chart_or_caption(ch, "Nog geen HRV-data.")
 
     col_a, col_b = st.columns(2)
     with col_a:
         st.subheader("Slaap per nacht")
-        ch = charts.sleep_chart(analysis.sleep_hours_series(history))
-        st.altair_chart(ch, width="stretch") if ch is not None else st.caption(
-            "Nog geen slaapdata."
-        )
+        chart_or_caption(charts.sleep_chart(analysis.sleep_hours_series(history)), "Nog geen slaapdata.")
     with col_b:
         st.subheader("Acute : chronische belasting")
         ch = charts.acwr_chart(acwr.get("acwr"))
@@ -295,11 +303,9 @@ def render_dashboard_page() -> None:
     st.subheader("Volume per week")
     col_c, col_d = st.columns(2)
     with col_c:
-        ch = charts.weekly_bar(weeks, "km", "Afstand (km)", charts.CYAN)
-        st.altair_chart(ch, width="stretch") if ch is not None else st.caption("—")
+        chart_or_caption(charts.weekly_bar(weeks, "km", "Afstand (km)", charts.CYAN))
     with col_d:
-        ch = charts.weekly_bar(weeks, "training_load", "Trainingsbelasting", charts.GOLD)
-        st.altair_chart(ch, width="stretch") if ch is not None else st.caption("—")
+        chart_or_caption(charts.weekly_bar(weeks, "training_load", "Trainingsbelasting", charts.GOLD))
 
 
 # --------------------------------------------------------------------------- #
