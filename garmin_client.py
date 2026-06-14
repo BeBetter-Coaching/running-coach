@@ -292,16 +292,20 @@ class GarminClient:
         return self._fetch("summary", date_str, lambda: self._api_or_raise().get_user_summary(date_str))
 
     def get_body_battery(self, start_str: str, end_str: str) -> MetricResult:
+        # date_str = einddatum (meestal vandaag): zo geldt de dag-TTL en pakt
+        # "Data verversen (vandaag)" deze range ook mee.
         return self._fetch(
-            f"body_battery_{end_str}",
-            start_str,
+            f"body_battery_{start_str}",
+            end_str,
             lambda: self._api_or_raise().get_body_battery(start_str, end_str),
         )
 
     def get_activities(self, start_str: str, end_str: str) -> MetricResult:
+        # date_str = einddatum (meestal vandaag), zodat nieuwe trainingen van
+        # vandaag wél ververst worden i.p.v. permanent gecachet op de startdatum.
         return self._fetch(
-            f"activities_{end_str}",
-            start_str,
+            f"activities_{start_str}",
+            end_str,
             lambda: self._api_or_raise().get_activities_by_date(start_str, end_str),
         )
 
