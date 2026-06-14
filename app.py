@@ -52,17 +52,19 @@ def get_client() -> GarminClient:
     )
 
 
-@st.cache_data(ttl=3600, show_spinner="Garmin-data ophalen…")
+# cache_resource (niet cache_data): de resultaten bevatten MetricResult-objecten,
+# die cache_data niet kan serialiseren. cache_resource bewaart het object zelf.
+@st.cache_resource(ttl=3600, show_spinner="Garmin-data ophalen…")
 def load_week() -> dict:
     return get_client().get_last_7_days()
 
 
-@st.cache_data(ttl=3600, show_spinner="Garmin-historie ophalen (28 dagen)…")
+@st.cache_resource(ttl=3600, show_spinner="Garmin-historie ophalen (28 dagen)…")
 def load_history(days: int = 28) -> dict:
     return get_client().get_history(days=days)
 
 
-@st.cache_data(ttl=3600, show_spinner="Readiness-data ophalen…")
+@st.cache_resource(ttl=3600, show_spinner="Readiness-data ophalen…")
 def load_readiness(days: int = 28) -> dict:
     return get_client().get_readiness_inputs(days=days)
 
@@ -113,6 +115,7 @@ if st.sidebar.button("🔄 Data verversen (vandaag)"):
         pass
     load_week.clear()
     load_history.clear()
+    load_readiness.clear()
     st.rerun()
 
 st.sidebar.divider()
@@ -385,7 +388,7 @@ def render_raw_page() -> None:
                         "max HS": a.get("maxHR"),
                     }
                 )
-            st.dataframe(rows, use_container_width=True, hide_index=True)
+            st.dataframe(rows, width="stretch", hide_index=True)
         with st.expander("Ruwe trainingen-JSON", expanded=False):
             st.json(acts_res.data, expanded=False)
 
