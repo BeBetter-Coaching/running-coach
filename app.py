@@ -17,6 +17,7 @@ import streamlit as st
 
 from garmin_client import GarminClient, GarminClientError
 import analysis
+import publish
 from coach import (
     generate_coach_report,
     build_flags,
@@ -297,6 +298,45 @@ def render_coach_page() -> None:
 
     with st.expander("Berekende cijfers (ruwe input voor de AI)", expanded=False):
         st.json(report, expanded=False)
+
+    # ----- Publiceren naar BeBetter (jouw eigen dossier) ------------------- #
+    st.divider()
+    with st.expander("📤 Publiceer naar BeBetter (jouw dossier)", expanded=False):
+        st.caption(
+            "Dit 'briefje' (readiness + weekcijfers + rapport) kan naar je eigen "
+            "dossier in BeBetter. Je ziet eerst het voorbeeld — er gaat pas iets de "
+            "deur uit als je op Publiceren klikt, en alleen naar het nieuwe bestand "
+            "garmin_state.json (je klantdata blijft onaangeroerd)."
+        )
+        athlete_key = get_secret("fs_user_key")
+        gh_token = get_secret("GH_TOKEN")
+
+        readiness_inputs = load_readiness(28)
+        readiness = analysis.analyze_readiness(
+            readiness_inputs["history"], readiness_inputs["today_summary"]
+        )
+        try:
+            state_entry = publish.build_athlete_state(
+                athlete_key or "preview",
+                readiness=readiness,
+                weekly_metrics=report,
+                weekly_report_md=st.session_state.get(state_key, ""),
+            )
+            st.json(state_entry, expanded=False)
+
+            if st.button("👁️ Lokaal voorbeeld opslaan (gaat nergens heen)"):
+                p = publish.save_local_preview(state_entry)
+                st.success(f"Voorbeeld opgeslagen: {p}")
+
+            if not athlete_key:
+                st.info("Vul `fs_user_key` (je FinalSurge user_key) in je secrets in om te publiceren.")
+            elif not gh_token:
+                st.info("Vul `GH_TOKEN` (schrijfrechten op bebetter-data) in je secrets in om te publiceren.")
+            elif st.button("📤 Publiceer naar BeBetter", type="primary"):
+                ok, msg = publish.publish(athlete_key, state_entry, gh_token)
+                (st.success if ok else st.error)(msg)
+        except publish.PublishError as e:
+            st.error(str(e))
 
 
 # --------------------------------------------------------------------------- #
