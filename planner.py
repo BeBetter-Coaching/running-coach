@@ -49,7 +49,9 @@ def build_skeleton(
     focus, races, notitie} ]}.
     """
     today = today or date.today()
-    base = max(20, round(current_weekly_km or 60))
+    # 90 km is de harde ondergrens. Periodisering loopt via INTENSITEIT, niet
+    # via volume: ook deload-weken houden de omvang op ~basis.
+    base = max(90, round(current_weekly_km or 90))
 
     races = []
     for r in plan.get("races", []) or []:
@@ -86,41 +88,34 @@ def build_skeleton(
         )
 
         notitie = ""
+        km = base  # volume blijft op de basis; we sturen op intensiteit
         if vac:
-            fase = "Vakantie – herstel/onderhoud"
-            km = min(round(base * 0.7), 70)
-            focus = "Rustig, Z1–Z2"
+            fase = "Vakantie – herstel"
+            focus = "Rustig Z1–Z2, intensiteit eruit (max 12 km/dag)"
             notitie = vac[2].get("notitie", "")
         elif races_this:
-            r0 = races_this[0]
-            prio = r0.get("prioriteit", "").upper()
-            fase = f"Wedstrijd: {r0.get('naam', '')}"
-            km = round(base * (0.6 if prio == "A" else 0.8))
-            focus = "Scherp aanzetten, racen, daarna herstel"
+            fase = f"Wedstrijd: {races_this[0].get('naam', '')}"
+            focus = "Race als kwaliteit, rest van de week rustig"
         elif weeks_to_a is not None and weeks_to_a <= 1:
             fase = "Taper (10K)"
-            km = round(base * 0.6)
-            focus = "Volume omlaag, kort racetempo aanzetten"
+            focus = "Volume op basis houden, scherpte/intensiteit eruit, fris worden"
         elif weeks_to_a is not None and weeks_to_a <= 3:
             fase = "Scherpen (10K)"
-            km = base
             focus = "10K-racetempo + drempel (Z3/Z4)"
             build_count += 1
         elif near_b:
             fase = "Scherpen (baan/3000m)"
-            km = base
             focus = "VO2 / baan-intervallen, snelheid"
             build_count += 1
         else:
             fase = "Opbouw"
-            km = base
-            focus = "Drempel (Z3) + volume vasthouden"
+            focus = "Drempel (Z3), volume op basis houden"
             build_count += 1
 
-        # Herstelweek elke 4e opbouw/scherp-week (niet in race/vakantie/taper).
+        # Deload elke 4e opbouw/scherp-week: INTENSITEIT omlaag, omvang blijft ~basis.
         if fase in ("Opbouw", "Scherpen (10K)", "Scherpen (baan/3000m)") and build_count % 4 == 0:
-            fase += " · herstelweek"
-            km = round(base * 0.75)
+            fase += " · deload (intensiteit ↓)"
+            focus = "Rustige aerobe week — volume op basis, weinig/geen kwaliteit"
 
         weeken.append(
             {
