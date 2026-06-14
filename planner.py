@@ -90,9 +90,14 @@ def build_skeleton(
         notitie = ""
         km = base  # volume blijft op de basis; we sturen op intensiteit
         if vac:
-            fase = "Vakantie – herstel"
-            focus = "Rustig Z1–Z2, intensiteit eruit (max 12 km/dag)"
-            notitie = vac[2].get("notitie", "")
+            # Enige uitzondering op de 90 km-ondergrens: flexibel, max 12 km/dag.
+            v_from, v_to, vk = vac
+            ov_s, ov_e = max(w_start, v_from), min(w_end, v_to)
+            vac_days = max(0, min(7, (ov_e - ov_s).days + 1)) if ov_e >= ov_s else 0
+            km = round(12 * vac_days + (base / 7) * (7 - vac_days))
+            fase = "Vakantie – flexibel"
+            focus = "Rustig Z1–Z2, max 12 km/dag"
+            notitie = vk.get("notitie", "")
         elif races_this:
             fase = f"Wedstrijd: {races_this[0].get('naam', '')}"
             focus = "Race als kwaliteit, rest van de week rustig"
