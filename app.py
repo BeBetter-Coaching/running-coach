@@ -325,12 +325,12 @@ def render_coach_page() -> None:
 
     # ----- Publiceren naar BeBetter (jouw eigen dossier) ------------------- #
     st.divider()
-    with st.expander("📤 Publiceer naar BeBetter (jouw dossier)", expanded=False):
+    with st.expander("📤 Publiceer naar Coachingsapp (jouw dossier)", expanded=False):
         st.caption(
             "Dit 'briefje' (readiness + weekcijfers + rapport) kan naar je eigen "
-            "dossier in BeBetter. Je ziet eerst het voorbeeld — er gaat pas iets de "
-            "deur uit als je op Publiceren klikt, en alleen naar het nieuwe bestand "
-            "garmin_state.json (je klantdata blijft onaangeroerd)."
+            "dossier in je coachingsapp. Je ziet eerst het voorbeeld — er gaat pas "
+            "iets de deur uit als je op Publiceren klikt, en alleen naar het nieuwe "
+            "bestand garmin_state.json (je klantdata blijft onaangeroerd)."
         )
         athlete_key = get_secret("fs_user_key")
         gh_token = get_secret("GH_TOKEN")
@@ -351,7 +351,7 @@ def render_coach_page() -> None:
                 st.info("Vul `fs_user_key` (je FinalSurge user_key) in je secrets in om te publiceren.")
             elif not gh_token:
                 st.info("Vul `GH_TOKEN` (schrijfrechten op bebetter-data) in je secrets in om te publiceren.")
-            elif st.button("📤 Publiceer naar BeBetter", type="primary"):
+            elif st.button("📤 Publiceer naar Coachingsapp", type="primary"):
                 ok, msg = publish.publish(athlete_key, state_entry, gh_token)
                 (st.success if ok else st.error)(msg)
         except publish.PublishError as e:

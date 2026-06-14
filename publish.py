@@ -134,7 +134,7 @@ def publish(
 
         put = requests.put(_api_url(repo), headers=_headers(token), json=body, timeout=15)
         if put.status_code in (200, 201):
-            return True, "Gepubliceerd naar BeBetter."
+            return True, "Gepubliceerd naar je coachingsapp."
         return False, f"GitHub API: {put.status_code} — {put.text[:200]}"
     except PublishError:
         raise
