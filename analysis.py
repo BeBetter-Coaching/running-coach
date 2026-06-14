@@ -401,6 +401,95 @@ def analyze_readiness(
 # --------------------------------------------------------------------------- #
 # Alles samen → input voor de AI
 # --------------------------------------------------------------------------- #
+def _zone_for_hr(hr: Optional[float], zones: list[dict]) -> str:
+    if hr is None:
+        return "?"
+    for z in zones or []:
+        try:
+            if z.get("laag") is not None and z.get("hoog") is not None:
+                if float(z["laag"]) <= hr <= float(z["hoog"]):
+                    return z.get("naam", "?")
+        except (TypeError, ValueError):
+            continue
+    return "?"
+
+
+def week_compliance(
+    weekplan: dict, activities: list[dict], hartslagzones: dict, today: Optional[date] = None
+) -> dict:
+    """Vergelijk de geplande week met wat er werkelijk is gelopen (Fase D).
+
+    Pure Python: per voltooide dag de geplande vs werkelijke km en de gemiddelde
+    hartslag → zone van de zwaarste activiteit die dag, plus status.
+    """
+    today = today or date.today()
+    zones = (hartslagzones or {}).get("zones", [])
+    by_date: dict[str, list] = {}
+    for a in activities or []:
+        d = _act_date(a)
+        if d:
+            by_date.setdefault(d, []).append(a)
+
+    dagen = []
+    tot_p = tot_w = 0.0
+    for d in weekplan.get("dagen", []):
+        datum = d.get("datum", "")
+        try:
+            dd = date.fromisoformat(datum)
+        except ValueError:
+            continue
+        if dd >= today:  # alleen voltooide dagen
+            continue
+        acts = by_date.get(datum, [])
+        w_km = round(sum(_act_km(a) for a in acts), 1)
+        gepland_km = d.get("km") or 0
+        main = max(acts, key=lambda a: (a.get("averageHR") or 0), default=None)
+        avg_hr = round(main["averageHR"]) if main and _is_num(main.get("averageHR")) else None
+        if acts:
+            status = "gedaan"
+        elif (str(d.get("type", "")).lower() in ("rust", "rustdag")) or gepland_km == 0:
+            status = "rust"
+        else:
+            status = "gemist"
+        tot_p += gepland_km
+        tot_w += w_km
+        dagen.append(
+            {
+                "dag": d.get("dag", ""),
+                "datum": datum,
+                "gepland_km": gepland_km,
+                "gepland_sessie": d.get("sessie", ""),
+                "werkelijk_km": w_km,
+                "gem_hs": avg_hr,
+                "zone": _zone_for_hr(avg_hr, zones),
+                "status": status,
+            }
+        )
+    return {"dagen": dagen, "totaal_gepland": round(tot_p), "totaal_werkelijk": round(tot_w, 1)}
+
+
+def compliance_review_text(comp: dict) -> str:
+    """Korte AI-leesbare samenvatting van gepland vs werkelijk (voor de volgende week)."""
+    if not comp.get("dagen"):
+        return ""
+    lines = []
+    for d in comp["dagen"]:
+        if d["status"] == "gemist":
+            lines.append(f"- {d['dag']}: gepland {d['gepland_km']} km — GEMIST")
+        elif d["status"] == "rust":
+            lines.append(f"- {d['dag']}: rust")
+        else:
+            hs = f", gem HS {d['gem_hs']} ({d['zone']})" if d["gem_hs"] else ""
+            lines.append(
+                f"- {d['dag']}: gepland {d['gepland_km']} km → werkelijk {d['werkelijk_km']} km{hs}"
+            )
+    return (
+        "UITVOERING VORIGE WEEK (gepland → werkelijk):\n"
+        + "\n".join(lines)
+        + f"\nTotaal gepland {comp['totaal_gepland']} / werkelijk {comp['totaal_werkelijk']} km."
+    )
+
+
 def analyze_history(history: dict, end: Optional[date] = None) -> dict:
     """Bereken alle metrics uit een client.get_history()-resultaat."""
     end = end or date.today()

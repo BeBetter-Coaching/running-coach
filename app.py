@@ -814,6 +814,9 @@ def render_weekplan_page() -> None:
     today_iso = date.today().isoformat()
     is_current = week_start <= today_iso <= (date.fromisoformat(week_start) + timedelta(days=6)).isoformat()
 
+    activities = analysis.activities_list(load_history(28))
+    hartslagzones = plan.get("hartslagzones") or {}
+
     col_a, col_b = st.columns([1, 1])
     do_generate = col_a.button(
         "🗓️ Genereer week" if not stored.get("dagen") else "↻ Opnieuw genereren",
@@ -826,9 +829,18 @@ def render_weekplan_page() -> None:
     if (do_generate or do_revise) and not api_key:
         st.warning("Zet `anthropic_api_key` in je secrets om het weekplan te (her)genereren.")
     elif do_generate:
+        # Voer de uitvoering van de vorige week mee, zodat de coach ervan leert.
+        prev_review = None
+        if idx > 0:
+            prev_stored = store.load_weekplan(athlete_key, weeks[idx - 1]["week_start"], gh_token)
+            if prev_stored.get("dagen"):
+                comp = analysis.week_compliance(prev_stored, activities, hartslagzones)
+                prev_review = analysis.compliance_review_text(comp)
         with st.spinner("De coach bouwt je week…"):
             try:
-                stored = generate_week_plan(week, readiness, plan, api_key)
+                stored = generate_week_plan(
+                    week, readiness, plan, api_key, vorige_week_review=prev_review
+                )
                 store.save_weekplan(athlete_key, week_start, stored, gh_token)
             except CoachError as e:
                 st.error(str(e))
@@ -845,6 +857,28 @@ def render_weekplan_page() -> None:
 
     if stored.get("dagen"):
         _render_weekplan(stored)
+        comp = analysis.week_compliance(stored, activities, hartslagzones)
+        if comp.get("dagen"):
+            with st.expander("📋 Terugblik — gepland vs. werkelijk"):
+                st.dataframe(
+                    [
+                        {
+                            "dag": c["dag"],
+                            "gepland km": c["gepland_km"],
+                            "werkelijk km": c["werkelijk_km"],
+                            "gem HS": c["gem_hs"] if c["gem_hs"] is not None else "—",
+                            "zone": c["zone"],
+                            "status": c["status"],
+                        }
+                        for c in comp["dagen"]
+                    ],
+                    width="stretch",
+                    hide_index=True,
+                )
+                st.caption(
+                    f"Totaal gepland {comp['totaal_gepland']} / werkelijk "
+                    f"{comp['totaal_werkelijk']} km"
+                )
     else:
         st.caption("Nog geen weekplan voor deze week — klik op 'Genereer week'.")
 

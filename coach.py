@@ -237,6 +237,7 @@ def generate_week_plan(
     api_key: Optional[str],
     vanaf_datum: Optional[str] = None,
     behouden_dagen: Optional[list] = None,
+    vorige_week_review: Optional[str] = None,
     model: str = MODEL_DUIDING,
 ) -> dict:
     """Genereer een gestructureerde, concrete week (Fase C).
@@ -290,6 +291,14 @@ def generate_week_plan(
             "actuele readiness; houd de rest van de week samenhangend."
         )
 
+    review_block = ""
+    if vorige_week_review:
+        review_block = (
+            "\n\n" + vorige_week_review + "\nWeeg dit mee: liep hij structureel te hard "
+            "(HS te hoog voor de zone), plan dan iets rustiger; ging het goed, bouw door; "
+            "gemiste sleutelsessies inhalen of laten, afhankelijk van de fase."
+        )
+
     user = f"""FASE-SKELET VAN DEZE WEEK (week vanaf {week.get('week_start')}):
 - Fase: {week.get('fase')}
 - Doel weekvolume: {week.get('doel_km')} km
@@ -310,7 +319,7 @@ RACEDOELEN (voor tempo's): {races_txt}
 HARTSLAGZONES{thr_max} — schrijf de intensiteit hierin (bpm):
 {zones_txt}
 
-READINESS VANDAAG: {light}{(' — ' + reasons) if reasons else ''}
+READINESS VANDAAG: {light}{(' — ' + reasons) if reasons else ''}{review_block}
 
 DAGEN VAN DEZE WEEK (gebruik exact deze datums en dagnamen):
 {datum_lijst}{keep_block}
