@@ -192,6 +192,18 @@ def render_today_page() -> None:
     else:
         st.markdown(f"**{readiness_template(readiness)}**")
 
+    with st.expander("ℹ️ Wat betekent dit stoplicht?"):
+        st.markdown(
+            "**🟢 Groen** — hersteld; ruimte voor een zware of intensieve training.\n\n"
+            "**🟡 Oranje** — gemengde signalen óf een recente zware sessie/wedstrijd; "
+            "pas de intensiteit aan, vaak een rustige duurloop.\n\n"
+            "**🔴 Rood** — onderherstel; rust of zeer rustig.\n\n"
+            "Het stoplicht weegt: je **HRV** t.o.v. je baseline, je **slaap**, je "
+            "**rust-hartslag** t.o.v. je weekgemiddelde, je **Body Battery** bij "
+            "ontwaken, je **acute:chronische belasting (ACWR)**, én **zware "
+            "trainingen van de afgelopen 24–48u** (Garmin Training Effect)."
+        )
+
     st.subheader("Signalen van vandaag")
     c1, c2, c3, c4 = st.columns(4)
     hrv = sig["hrv"]

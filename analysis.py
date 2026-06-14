@@ -270,6 +270,16 @@ def analyze_volume(acts: list[dict], end: Optional[date] = None, weeks: int = 4)
 # --------------------------------------------------------------------------- #
 # Dagelijkse readiness (Fase 3) — pure drempelwaarden, geen AI
 # --------------------------------------------------------------------------- #
+# Nederlandse labels + betekenis van het stoplicht (één bron voor app + coach).
+READINESS_LABELS = {"green": "GROEN", "amber": "ORANJE", "red": "ROOD"}
+READINESS_MEANING = {
+    "green": "hersteld — ruimte voor een zware of intensieve training",
+    "amber": "gemengde signalen of recente zware sessie — pas de intensiteit aan, vaak easy",
+    "red": "onderherstel — rust of zeer rustig",
+}
+
+
+
 def analyze_readiness(
     history: dict,
     today_summary,

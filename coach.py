@@ -19,6 +19,8 @@ from typing import Optional
 
 import anthropic
 
+import analysis
+
 # Nieuwste Claude voor duiding/analyse; Haiku (goedkoopst) voor simpele
 # filterstappen zoals het dagelijkse readiness-advies bij twijfelgevallen.
 MODEL_DUIDING = "claude-opus-4-8"
@@ -74,7 +76,10 @@ def build_flags(report: dict, readiness: Optional[dict] = None) -> list[str]:
     if readiness:
         light = readiness.get("light")
         if light in ("amber", "red"):
-            flags.append(f"Readiness vandaag staat op {light.upper()}.")
+            flags.append(
+                f"Readiness vandaag: {analysis.READINESS_LABELS.get(light, light)} "
+                f"({analysis.READINESS_MEANING.get(light, '')})."
+            )
         hard = (readiness.get("signals") or {}).get("last_hard_session")
         if hard and hard.get("hours_ago") is not None and hard["hours_ago"] <= 48:
             flags.append(
