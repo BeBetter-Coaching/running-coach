@@ -180,8 +180,11 @@ HARDE REGELS:
   de INTENSITEIT, niet de omvang — houd het volume dan op de basis.
 - Stem de intensiteit af op zijn READINESS: bij oranje/rood minder of geen
   kwaliteit (verzacht of verschuif sleutelsessies); bij groen is er ruimte.
-- Gebruik zijn zone-taal (Z1 t/m Z5) en verwijs naar concreet racetempo waar
-  relevant (leid dat af uit zijn doeltijden).
+- Jip traint op HARTSLAG. Schrijf de intensiteit PRIMAIR in hartslag (bpm)
+  volgens zijn zones in de invoer (bv. "Z3 drempel, 166–176 bpm"). Tempo mag als
+  ruwe richtlijn erbij (afgeleid uit zijn doeltijden), maar de hartslag-zone
+  leidt — zeker bij duurlopen en drempel. Voor korte baan-/intervallen mag tempo
+  leidend zijn (HS ijlt daar na).
 
 Schrijf per dag de sessie(s) concreet: afstand of duur, structuur (bv. 2x15'
 threshold Z3) en zone/tempo. Markeer dubbels duidelijk. Sluit af met 1–2 zinnen
@@ -213,6 +216,17 @@ def generate_week_plan(
     )
     reasons = "; ".join((readiness.get("reasons") or [])[:3])
 
+    hz = plan.get("hartslagzones") or {}
+    zone_lines = [
+        f"- {z.get('naam')}: {z.get('laag')}–{z.get('hoog')} bpm"
+        for z in (hz.get("zones") or [])
+        if z.get("naam")
+    ]
+    zones_txt = "\n".join(zone_lines) or "(geen hartslagzones opgegeven)"
+    thr_max = ""
+    if hz.get("threshold_bpm") or hz.get("max_bpm"):
+        thr_max = f" (drempel {hz.get('threshold_bpm', '?')} bpm, max {hz.get('max_bpm', '?')} bpm)"
+
     user = f"""FASE-SKELET VAN DEZE WEEK (week vanaf {week.get('week_start')}):
 - Fase: {week.get('fase')}
 - Doel weekvolume: {week.get('doel_km')} km
@@ -229,6 +243,9 @@ VOORKEUREN: {voork.get('trainingsdagen_per_week', '?')} trainingsdagen/week, \
 Liever niet: {', '.join(voork.get('types_niet_leuk', []))}.
 
 RACEDOELEN (voor tempo's): {races_txt}
+
+HARTSLAGZONES{thr_max} — schrijf de intensiteit hierin (bpm):
+{zones_txt}
 
 READINESS VANDAAG: {light}{(' — ' + reasons) if reasons else ''}
 

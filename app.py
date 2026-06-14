@@ -550,6 +550,14 @@ _KAL_TYPES = ["Vakantie", "Lichte week", "Druk/weinig tijd", "Niet beschikbaar",
 _TYPES = ["Lange duurloop", "Rustige duurloop", "Intervallen", "Tempo/drempel", "Heuvels", "Baan", "Parkrun", "Kracht"]
 _RACE_COLS = ["naam", "datum", "afstand", "prioriteit", "doeltijd"]
 _KAL_COLS = ["type", "van", "tot", "notitie"]
+_ZONE_COLS = ["naam", "laag", "hoog"]
+_DEFAULT_ZONES = [
+    {"naam": "Z1 Easy", "laag": 100, "hoog": 154},
+    {"naam": "Z2 Marathon", "laag": 155, "hoog": 165},
+    {"naam": "Z3 Threshold", "laag": 166, "hoog": 176},
+    {"naam": "Z4 Interval", "laag": 177, "hoog": 187},
+    {"naam": "Z5 Repetition", "laag": 188, "hoog": 196},
+]
 
 
 def render_planning_page() -> None:
@@ -614,6 +622,24 @@ def render_planning_page() -> None:
         placeholder="bv. zondag lange duurloop, geen baan, niet 2 zware dagen op rij",
     )
 
+    st.subheader("❤️ Hartslagzones")
+    st.caption("Je traint op hartslag — hierin schrijft de coach je weken.")
+    hz = plan.get("hartslagzones") or {}
+    cz1, cz2 = st.columns(2)
+    thr_bpm = cz1.number_input("Drempel-HS (bpm)", 100, 230, int(hz.get("threshold_bpm", 176)))
+    max_bpm = cz2.number_input("Max-HS (bpm)", 120, 240, int(hz.get("max_bpm", 196)))
+    zones_edited = st.data_editor(
+        pd.DataFrame(hz.get("zones") or _DEFAULT_ZONES, columns=_ZONE_COLS),
+        num_rows="dynamic",
+        width="stretch",
+        key="zones_ed",
+        column_config={
+            "naam": st.column_config.TextColumn("Zone"),
+            "laag": st.column_config.NumberColumn("Laag (bpm)"),
+            "hoog": st.column_config.NumberColumn("Hoog (bpm)"),
+        },
+    )
+
     def _records(df: pd.DataFrame, key_field: str) -> list[dict]:
         recs = df.fillna("").to_dict("records")
         return [r for r in recs if str(r.get(key_field, "")).strip()]
@@ -628,6 +654,15 @@ def render_planning_page() -> None:
             "types_leuk": leuk,
             "types_niet_leuk": niet,
             "overig": overig.strip(),
+        },
+        "hartslagzones": {
+            "threshold_bpm": int(thr_bpm),
+            "max_bpm": int(max_bpm),
+            "zones": [
+                {"naam": str(r["naam"]), "laag": int(r.get("laag") or 0), "hoog": int(r.get("hoog") or 0)}
+                for r in zones_edited.fillna(0).to_dict("records")
+                if str(r.get("naam", "")).strip()
+            ],
         },
     }
 
