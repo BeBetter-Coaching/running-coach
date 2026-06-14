@@ -230,6 +230,13 @@ def render_coach_page() -> None:
     history = load_history(28)
     report = analysis.analyze_history(history)
 
+    # Readiness van vandaag erbij, zodat het advies daarop aansluit (en niet
+    # de "Vandaag"-pagina tegenspreekt).
+    readiness_inputs = load_readiness(28)
+    readiness = analysis.analyze_readiness(
+        readiness_inputs["history"], readiness_inputs["today_summary"]
+    )
+
     hrv = report["hrv"]
     sleep = report["sleep"]
     acwr = report["acwr"]
@@ -265,7 +272,7 @@ def render_coach_page() -> None:
 
     # Pre-filter aandachtspunten (gratis Python)
     st.subheader("Signalen (drempelwaarden)")
-    for f in build_flags(report):
+    for f in build_flags(report, readiness):
         st.markdown(f"- {f}")
 
     st.divider()
@@ -289,7 +296,9 @@ def render_coach_page() -> None:
         else:
             with st.spinner("De coach denkt na over je cijfers…"):
                 try:
-                    st.session_state[state_key] = generate_coach_report(report, api_key)
+                    st.session_state[state_key] = generate_coach_report(
+                        report, api_key, readiness=readiness
+                    )
                 except CoachError as e:
                     st.error(str(e))
 
@@ -310,11 +319,6 @@ def render_coach_page() -> None:
         )
         athlete_key = get_secret("fs_user_key")
         gh_token = get_secret("GH_TOKEN")
-
-        readiness_inputs = load_readiness(28)
-        readiness = analysis.analyze_readiness(
-            readiness_inputs["history"], readiness_inputs["today_summary"]
-        )
         try:
             state_entry = publish.build_athlete_state(
                 athlete_key or "preview",

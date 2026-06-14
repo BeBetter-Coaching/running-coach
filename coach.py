@@ -48,6 +48,12 @@ hard" of "te weinig rust" is.
 **Advies voor de komende dagen** — één concrete trainingsaanbeveling (wat, hoe \
 zwaar, en waarom), passend bij de cijfers. Durf rust of rustig te zeggen als de \
 data daarom vraagt.
+
+BELANGRIJK: je krijgt ook de READINESS VAN VANDAAG mee (stoplicht + reden, incl. \
+een eventuele zware sessie of wedstrijd van de afgelopen 24–48u). Je advies MOET \
+daarop aansluiten — spreek de dagstatus niet tegen. Deed Jip net een zware sessie \
+of wedstrijd, dan begint je advies met herstel (vandaag/morgen easy of rust), ook \
+al ogen de wekelijkse herstelcijfers groen. Bouw de prikkel pas daarna weer op.
 """
 
 
@@ -55,13 +61,27 @@ class CoachError(Exception):
     """Foutmelding uit de coachlaag die de app netjes kan tonen."""
 
 
-def build_flags(report: dict) -> list[str]:
+def build_flags(report: dict, readiness: Optional[dict] = None) -> list[str]:
     """Gratis Python pre-filter: vertaal de getallen naar aandachtspunten.
 
     Dit stuurt de AI-duiding en houdt het signaal scherp. Pure drempelwaarden,
-    geen AI.
+    geen AI. Als de readiness van vandaag meekomt, staat die vooraan zodat het
+    advies daarop aansluit.
     """
     flags: list[str] = []
+
+    # Readiness van vandaag eerst — dit moet het advies sturen.
+    if readiness:
+        light = readiness.get("light")
+        if light in ("amber", "red"):
+            flags.append(f"Readiness vandaag staat op {light.upper()}.")
+        hard = (readiness.get("signals") or {}).get("last_hard_session")
+        if hard and hard.get("hours_ago") is not None and hard["hours_ago"] <= 48:
+            flags.append(
+                f"Zware sessie {hard['hours_ago']:.0f}u geleden "
+                f"({hard.get('name')}, Training Effect {hard.get('aerobic_te')}/"
+                f"{hard.get('anaerobic_te')}) — prioriteer eerst herstel."
+            )
 
     hrv = report.get("hrv", {})
     if hrv.get("available"):
@@ -157,17 +177,40 @@ def _client(api_key: Optional[str]) -> anthropic.Anthropic:
 def generate_coach_report(
     report: dict,
     api_key: Optional[str],
+    readiness: Optional[dict] = None,
     model: str = MODEL_DUIDING,
 ) -> str:
-    """Eén AI-call die de berekende getallen duidt tot een wekelijks coach-rapport."""
+    """Eén AI-call die de berekende getallen duidt tot een wekelijks coach-rapport.
+
+    `readiness` (de dagstatus) wordt meegegeven zodat het advies daarop aansluit
+    en niet de "Vandaag"-pagina tegenspreekt.
+    """
     client = _client(api_key)
-    flags = build_flags(report)
+    flags = build_flags(report, readiness)
+
+    readiness_block = ""
+    if readiness:
+        readiness_block = (
+            "\n\nREADINESS VANDAAG (dagstatus — je advies moet hierop aansluiten):\n"
+            + json.dumps(
+                {
+                    "light": readiness.get("light"),
+                    "reasons": readiness.get("reasons"),
+                    "last_hard_session": (readiness.get("signals") or {}).get(
+                        "last_hard_session"
+                    ),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
 
     user_content = (
         "Hier zijn de in Python berekende getallen over de afgelopen periode "
         f"(t/m {report.get('end_date', 'onbekend')}). Duid ze volgens je rol.\n\n"
         "AANDACHTSPUNTEN (vooraf bepaald door drempelwaarden):\n"
         + "\n".join(f"- {f}" for f in flags)
+        + readiness_block
         + "\n\nBEREKENDE CIJFERS (JSON):\n"
         + json.dumps(report, ensure_ascii=False, indent=2)
     )
