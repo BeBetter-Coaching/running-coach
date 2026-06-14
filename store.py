@@ -22,6 +22,7 @@ import requests
 
 DEFAULT_REPO = "BeBetter-Coaching/bebetter-data"
 PLANS_FILE = "running_plans.json"  # dict: user_key -> plan
+WEEKPLANS_FILE = "running_weekplans.json"  # dict: user_key -> {week_start: weekplan}
 _LOCAL_DIR = Path(__file__).resolve().parent / "data"
 
 
@@ -106,3 +107,26 @@ def save_plan(user_key: str, plan: dict, gh_token: Optional[str] = None) -> tupl
         allp = {}
     allp[user_key] = {**plan, "updated_at": datetime.now().isoformat(timespec="seconds")}
     return _save_all(allp, gh_token)
+
+
+def load_weekplan(user_key: str, week_start: str, gh_token: Optional[str] = None) -> dict:
+    """Laad het opgeslagen (gestructureerde) weekplan voor één week ({} als leeg)."""
+    if not user_key:
+        return {}
+    allp = _load_all(gh_token, file=WEEKPLANS_FILE)
+    return (allp.get(user_key) or {}).get(week_start, {})
+
+
+def save_weekplan(
+    user_key: str, week_start: str, weekplan: dict, gh_token: Optional[str] = None
+) -> tuple[bool, str]:
+    """Sla het weekplan voor één week op (gekeyd op user_key -> week_start)."""
+    if not user_key:
+        return False, "Geen athlete-key — kan niet opslaan."
+    allp = _load_all(gh_token, file=WEEKPLANS_FILE)
+    if not isinstance(allp, dict):
+        allp = {}
+    user = allp.get(user_key) or {}
+    user[week_start] = {**weekplan, "opgeslagen_op": datetime.now().isoformat(timespec="seconds")}
+    allp[user_key] = user
+    return _save_all(allp, gh_token, file=WEEKPLANS_FILE)

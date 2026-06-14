@@ -10,7 +10,7 @@ Alle Garmin-aanroepen lopen via garmin_client.GarminClient (de client-laag);
 alle berekeningen via analysis.py; de duiding via coach.py.
 """
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Optional
 
 import streamlit as st
@@ -26,6 +26,7 @@ import planner
 from coach import (
     generate_coach_report,
     generate_week_plan,
+    adjust_today,
     build_flags,
     daily_readiness_advice,
     readiness_template,
@@ -253,6 +254,42 @@ def render_today_page() -> None:
             st.caption("Voeg `anthropic_api_key` toe voor een op maat geduid advies.")
     else:
         st.markdown(f"**{readiness_template(readiness)}**")
+
+    # Vandaag geplande sessie uit het weekplan + dagelijkse bijsturing.
+    gh_token = get_secret("GH_TOKEN")
+    athlete_key = get_secret("fs_user_key")
+    if athlete_key:
+        today = date.today()
+        wk_monday = (today - timedelta(days=today.weekday())).isoformat()
+        wp = store.load_weekplan(athlete_key, wk_monday, gh_token)
+        today_day = next(
+            (d for d in wp.get("dagen", []) if d.get("datum") == today.isoformat()), None
+        )
+        if today_day:
+            st.subheader("Vandaag gepland")
+            st.markdown(
+                f"**{str(today_day.get('dag', '')).capitalize()}** — {today_day.get('sessie', '')}"
+            )
+            adj_key = f"adjust_{today.isoformat()}"
+            if light == "green":
+                st.caption("✅ Readiness groen — ga zoals gepland.")
+            elif api_key:
+                if adj_key not in st.session_state:
+                    with st.spinner("Coach checkt je sessie tegen je readiness…"):
+                        try:
+                            st.session_state[adj_key] = adjust_today(
+                                today_day.get("sessie", ""),
+                                readiness,
+                                store.load_plan(athlete_key, gh_token),
+                                api_key,
+                            )
+                        except CoachError as e:
+                            st.session_state[adj_key] = ""
+                            st.caption(f"(bijsturing niet beschikbaar: {e})")
+                if st.session_state.get(adj_key):
+                    st.info(f"🔧 Bijsturing: {st.session_state[adj_key]}")
+            else:
+                st.caption("Voeg `anthropic_api_key` toe voor dagelijkse bijsturing.")
 
     with st.expander("ℹ️ Wat betekent dit stoplicht?"):
         st.markdown(
@@ -711,9 +748,19 @@ def render_planning_page() -> None:
 # --------------------------------------------------------------------------- #
 # Pagina: Weekplan (Fase C)
 # --------------------------------------------------------------------------- #
+def _render_weekplan(wp: dict) -> None:
+    for d in wp.get("dagen", []):
+        dag = str(d.get("dag", "")).capitalize()
+        km = d.get("km")
+        km_txt = f" · {km} km" if km not in (None, "", 0) else ""
+        st.markdown(f"**{dag} · {d.get('datum', '')}**{km_txt}  \n{d.get('sessie', '')}")
+    if wp.get("toelichting"):
+        st.caption(wp["toelichting"])
+
+
 def render_weekplan_page() -> None:
     st.title("Weekplan")
-    st.caption("De concrete week — jouw stramien ingevuld per fase, met je readiness erin.")
+    st.caption("De concrete week — jouw stramien per fase, in hartslag, met je readiness erin.")
     gh_token = get_secret("GH_TOKEN")
     athlete_key = get_secret("fs_user_key")
     api_key = get_secret("anthropic_api_key")
@@ -745,25 +792,44 @@ def render_weekplan_page() -> None:
         readiness_inputs["history"], readiness_inputs["today_summary"]
     )
 
-    state_key = f"weekplan_{week['week_start']}"
-    col_a, col_b = st.columns([1, 3])
-    generate = col_a.button("🗓️ Genereer weekplan", type="primary")
-    if col_b.button("↻ Opnieuw genereren"):
-        st.session_state.pop(state_key, None)
-        generate = True
+    week_start = week["week_start"]
+    stored = store.load_weekplan(athlete_key, week_start, gh_token) if athlete_key else {}
+    today_iso = date.today().isoformat()
+    is_current = week_start <= today_iso <= (date.fromisoformat(week_start) + timedelta(days=6)).isoformat()
 
-    if generate and state_key not in st.session_state:
-        if not api_key:
-            st.warning("Zet `anthropic_api_key` in je secrets om het weekplan te genereren.")
-        else:
-            with st.spinner("De coach bouwt je week…"):
-                try:
-                    st.session_state[state_key] = generate_week_plan(week, readiness, plan, api_key)
-                except CoachError as e:
-                    st.error(str(e))
+    col_a, col_b = st.columns([1, 1])
+    do_generate = col_a.button(
+        "🗓️ Genereer week" if not stored.get("dagen") else "↻ Opnieuw genereren",
+        type="primary",
+    )
+    do_revise = False
+    if stored.get("dagen") and is_current:
+        do_revise = col_b.button("🔄 Herzie rest van deze week (verse data)")
 
-    if state_key in st.session_state:
-        st.markdown(st.session_state[state_key])
+    if (do_generate or do_revise) and not api_key:
+        st.warning("Zet `anthropic_api_key` in je secrets om het weekplan te (her)genereren.")
+    elif do_generate:
+        with st.spinner("De coach bouwt je week…"):
+            try:
+                stored = generate_week_plan(week, readiness, plan, api_key)
+                store.save_weekplan(athlete_key, week_start, stored, gh_token)
+            except CoachError as e:
+                st.error(str(e))
+    elif do_revise:
+        keep = [d for d in stored.get("dagen", []) if d.get("datum", "") < today_iso]
+        with st.spinner("De coach herziet de rest van je week…"):
+            try:
+                stored = generate_week_plan(
+                    week, readiness, plan, api_key, vanaf_datum=today_iso, behouden_dagen=keep
+                )
+                store.save_weekplan(athlete_key, week_start, stored, gh_token)
+            except CoachError as e:
+                st.error(str(e))
+
+    if stored.get("dagen"):
+        _render_weekplan(stored)
+    else:
+        st.caption("Nog geen weekplan voor deze week — klik op 'Genereer week'.")
 
 
 # --------------------------------------------------------------------------- #

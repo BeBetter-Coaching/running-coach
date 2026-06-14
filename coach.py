@@ -15,11 +15,38 @@ Gebruikt de officiële Anthropic SDK met het nieuwste Claude-model voor duiding.
 from __future__ import annotations
 
 import json
+from datetime import date, timedelta
 from typing import Optional
 
 import anthropic
 
 import analysis
+
+_DAGEN_NL = ["maandag", "dinsdag", "woensdag", "donderdag", "vrijdag", "zaterdag", "zondag"]
+
+WEEK_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "dagen": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "dag": {"type": "string"},
+                    "datum": {"type": "string"},
+                    "sessie": {"type": "string"},
+                    "type": {"type": "string"},
+                    "km": {"type": "number"},
+                },
+                "required": ["dag", "datum", "sessie", "type", "km"],
+            },
+        },
+        "toelichting": {"type": "string"},
+    },
+    "required": ["dagen", "toelichting"],
+}
 
 # Nieuwste Claude voor duiding/analyse; Haiku (goedkoopst) voor simpele
 # filterstappen zoals het dagelijkse readiness-advies bij twijfelgevallen.
@@ -208,9 +235,16 @@ def generate_week_plan(
     readiness: dict,
     plan: dict,
     api_key: Optional[str],
+    vanaf_datum: Optional[str] = None,
+    behouden_dagen: Optional[list] = None,
     model: str = MODEL_DUIDING,
-) -> str:
-    """Genereer één concrete trainingsweek (Fase C) — fase + readiness + stramien."""
+) -> dict:
+    """Genereer een gestructureerde, concrete week (Fase C).
+
+    Bij `vanaf_datum` + `behouden_dagen` worden de al gedane dagen ongewijzigd
+    overgenomen en wordt alleen de rest van de week herzien (verse readiness).
+    Geeft terug: {week_start, fase, doel_km, dagen:[...], toelichting}.
+    """
     client = _client(api_key)
     voork = plan.get("voorkeuren", {}) or {}
     races = plan.get("races", []) or []
@@ -238,6 +272,24 @@ def generate_week_plan(
     if hz.get("threshold_bpm") or hz.get("max_bpm"):
         thr_max = f" (drempel {hz.get('threshold_bpm', '?')} bpm, max {hz.get('max_bpm', '?')} bpm)"
 
+    try:
+        wk0 = date.fromisoformat(week.get("week_start"))
+    except Exception:
+        wk0 = date.today()
+    datums = [wk0 + timedelta(days=i) for i in range(7)]
+    datum_lijst = "\n".join(f"- {_DAGEN_NL[i]}: {datums[i].isoformat()}" for i in range(7))
+
+    keep_block = ""
+    if vanaf_datum and behouden_dagen:
+        done = "\n".join(
+            f"- {d.get('dag')} {d.get('datum')}: {d.get('sessie')}" for d in behouden_dagen
+        )
+        keep_block = (
+            "\n\nHERZIENING — de volgende dagen staan VAST (al gedaan) en neem je "
+            f"ONGEWIJZIGD over:\n{done}\nHerplan alleen vanaf {vanaf_datum} op basis van de "
+            "actuele readiness; houd de rest van de week samenhangend."
+        )
+
     user = f"""FASE-SKELET VAN DEZE WEEK (week vanaf {week.get('week_start')}):
 - Fase: {week.get('fase')}
 - Doel weekvolume: {week.get('doel_km')} km
@@ -260,14 +312,20 @@ HARTSLAGZONES{thr_max} — schrijf de intensiteit hierin (bpm):
 
 READINESS VANDAAG: {light}{(' — ' + reasons) if reasons else ''}
 
-Bouw nu de concrete week."""
+DAGEN VAN DEZE WEEK (gebruik exact deze datums en dagnamen):
+{datum_lijst}{keep_block}
+
+Bouw nu de concrete week als gestructureerde dagen (maandag t/m zondag): per dag de
+dag, datum, een concrete sessie (intensiteit in hartslag/bpm), het type
+(rustig/quality/dubbel/rust/wedstrijd) en de km. Vul ook een korte 'toelichting'
+(waarom de week zo is opgebouwd)."""
 
     try:
         response = client.messages.create(
             model=model,
-            max_tokens=3000,
+            max_tokens=4000,
             thinking={"type": "adaptive"},
-            output_config={"effort": "high"},
+            output_config={"effort": "high", "format": {"type": "json_schema", "schema": WEEK_SCHEMA}},
             system=WEEK_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user}],
         )
@@ -279,9 +337,61 @@ Bouw nu de concrete week."""
         raise CoachError(f"Anthropic API-fout: {e}")
 
     text = "".join(b.text for b in response.content if b.type == "text").strip()
-    if not text:
-        raise CoachError("De AI gaf een leeg weekplan terug.")
-    return text
+    try:
+        data = json.loads(text)
+    except Exception:
+        raise CoachError("Kon het weekplan niet als gestructureerde data lezen.")
+    return {
+        "week_start": week.get("week_start"),
+        "fase": week.get("fase"),
+        "doel_km": week.get("doel_km"),
+        "dagen": data.get("dagen", []),
+        "toelichting": data.get("toelichting", ""),
+    }
+
+
+ADJUST_SYSTEM = """\
+Je bent de hardloopcoach van Jip. Je krijgt de sessie die vandaag gepland staat en
+zijn actuele readiness. Zeg in maximaal 2 zinnen of hij de sessie zo kan doen, of
+hem moet aanpassen (verzachten, korter, of verschuiven naar morgen). Hij traint op
+hartslag — gebruik bpm-zones. Bij onderherstel bescherm je hem; bij groen mag hij
+gaan. Nederlands, direct, geen emoji.
+"""
+
+
+def adjust_today(session_text: str, readiness: dict, plan: dict, api_key: Optional[str]) -> str:
+    """Korte dagelijkse bijsturing van de geplande sessie o.b.v. verse readiness (Haiku)."""
+    client = _client(api_key)
+    hz = plan.get("hartslagzones") or {}
+    zones = "; ".join(
+        f"{z.get('naam')} {z.get('laag')}-{z.get('hoog')}"
+        for z in (hz.get("zones") or [])
+        if z.get("naam")
+    )
+    light = {"green": "GROEN", "amber": "ORANJE", "red": "ROOD"}.get(
+        readiness.get("light"), readiness.get("light", "")
+    )
+    reasons = "; ".join((readiness.get("reasons") or [])[:3])
+    user = (
+        f"Gepland vandaag: {session_text}\n"
+        f"Readiness: {light}{(' — ' + reasons) if reasons else ''}\n"
+        f"HS-zones: {zones}\n\nKan hij dit zo doen, of aanpassen?"
+    )
+    try:
+        response = client.messages.create(
+            model=MODEL_FILTER,
+            max_tokens=250,
+            system=ADJUST_SYSTEM,
+            messages=[{"role": "user", "content": user}],
+        )
+    except anthropic.AuthenticationError:
+        raise CoachError("Anthropic API-key ongeldig. Controleer `anthropic_api_key`.")
+    except anthropic.RateLimitError:
+        raise CoachError("Anthropic rate limit bereikt. Probeer het zo opnieuw.")
+    except anthropic.APIError as e:
+        raise CoachError(f"Anthropic API-fout: {e}")
+    text = "".join(b.text for b in response.content if b.type == "text").strip()
+    return text or "Ga zoals gepland."
 
 
 def _client(api_key: Optional[str]) -> anthropic.Anthropic:
