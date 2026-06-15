@@ -280,9 +280,20 @@ READINESS_MEANING = {
 
 
 
+_GARMIN_LEVEL_NL = {
+    "PRIME": "prime",
+    "MAXIMUM": "maximaal",
+    "HIGH": "hoog",
+    "MODERATE": "matig",
+    "LOW": "laag",
+    "POOR": "slecht",
+}
+
+
 def analyze_readiness(
     history: dict,
     today_summary,
+    today_readiness=None,
     end: Optional[date] = None,
     now: Optional[datetime] = None,
 ) -> dict:
@@ -376,14 +387,34 @@ def analyze_readiness(
         light = "amber"
     else:
         light = "green"
-
     base_reasons = red + amber if (red or amber) else ["Alle signalen in orde."]
+
+    # Garmin's eigen Training Readiness is leidend als die er is — die zie je ook
+    # op je horloge en weegt herstel + belasting al integraal mee. Onze eigen
+    # signalen worden dan context i.p.v. iets dat het stoplicht overrulet.
+    gr = getattr(today_readiness, "data", today_readiness)
+    if isinstance(gr, list) and gr:
+        gr = gr[0]
+    g_score = gr.get("score") if isinstance(gr, dict) else None
+    g_level = gr.get("level") if isinstance(gr, dict) else None
+    if g_score is not None:
+        light = "green" if g_score >= 50 else ("amber" if g_score >= 25 else "red")
+        level_nl = _GARMIN_LEVEL_NL.get(g_level, (g_level or "").lower())
+        garmin_reason = f"Garmin Training Readiness {g_score}" + (
+            f" ({level_nl})" if level_nl else ""
+        )
+        context = [r for r in (red + amber + notes) if r != "Alle signalen in orde."]
+        base_reasons = [garmin_reason] + context
+        notes = []
 
     return {
         "date": end.isoformat(),
         "light": light,
         "reasons": base_reasons + notes,
+        "garmin_score": g_score,
+        "garmin_level": g_level,
         "signals": {
+            "garmin_readiness_score": g_score,
             "last_hard_session": hard,
             "hrv": hrv,
             "sleep_last_night_h": last_sleep,

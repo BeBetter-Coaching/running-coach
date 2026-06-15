@@ -291,6 +291,14 @@ class GarminClient:
         """Dagsamenvatting: o.a. stappen, totaal-stress, Body Battery, calorieën."""
         return self._fetch("summary", date_str, lambda: self._api_or_raise().get_user_summary(date_str))
 
+    def get_training_readiness(self, date_str: str) -> MetricResult:
+        """Garmin's eigen Training Readiness (score 0–100 + level) — primaire bron."""
+        return self._fetch(
+            "training_readiness",
+            date_str,
+            lambda: self._api_or_raise().get_training_readiness(date_str),
+        )
+
     def get_body_battery(self, start_str: str, end_str: str) -> MetricResult:
         # date_str = einddatum (meestal vandaag): zo geldt de dag-TTL en pakt
         # "Data verversen (vandaag)" deze range ook mee.
@@ -372,6 +380,7 @@ class GarminClient:
             "date": end.isoformat(),
             "history": self.get_history(days=days, end=end),
             "today_summary": self.get_summary(end.isoformat()),
+            "today_readiness": self.get_training_readiness(end.isoformat()),
         }
 
     def get_last_7_days(self, end: Optional[date] = None) -> dict:

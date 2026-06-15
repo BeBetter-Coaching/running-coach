@@ -239,7 +239,9 @@ except Exception as e:  # noqa: BLE001
 def render_today_page() -> None:
     st.title("Vandaag — mag je hard?")
     inputs = load_readiness(28)
-    readiness = analysis.analyze_readiness(inputs["history"], inputs["today_summary"])
+    readiness = analysis.analyze_readiness(
+        inputs["history"], inputs["today_summary"], inputs.get("today_readiness")
+    )
     light = readiness["light"]
     sig = readiness["signals"]
 
@@ -314,10 +316,11 @@ def render_today_page() -> None:
             "**🟡 Oranje** — gemengde signalen óf een recente zware sessie/wedstrijd; "
             "pas de intensiteit aan, vaak een rustige duurloop.\n\n"
             "**🔴 Rood** — onderherstel; rust of zeer rustig.\n\n"
-            "Het stoplicht weegt: je **HRV** t.o.v. je baseline, je **slaap**, je "
-            "**rust-hartslag** t.o.v. je weekgemiddelde, je **Body Battery** bij "
-            "ontwaken, je **acute:chronische belasting (ACWR)**, én **zware "
-            "trainingen van de afgelopen 24–48u** (Garmin Training Effect)."
+            "Het stoplicht volgt **Garmin's eigen Training Readiness** (de score die "
+            "je ook op je horloge ziet). Je **HRV**, **slaap**, **rust-HS**, **Body "
+            "Battery**, **ACWR** en recente **zware sessies** staan eronder als "
+            "context. Komt Garmin's score er niet door, dan valt het terug op die "
+            "eigen signalen."
         )
 
     st.subheader("Signalen van vandaag")
@@ -357,7 +360,9 @@ def render_dashboard_page() -> None:
     report = analysis.analyze_history(history)
     readiness_inputs = load_readiness(28)
     readiness = analysis.analyze_readiness(
-        readiness_inputs["history"], readiness_inputs["today_summary"]
+        readiness_inputs["history"],
+        readiness_inputs["today_summary"],
+        readiness_inputs.get("today_readiness"),
     )
 
     hrv = report["hrv"]
@@ -421,7 +426,9 @@ def render_coach_page() -> None:
     # de "Vandaag"-pagina tegenspreekt).
     readiness_inputs = load_readiness(28)
     readiness = analysis.analyze_readiness(
-        readiness_inputs["history"], readiness_inputs["today_summary"]
+        readiness_inputs["history"],
+        readiness_inputs["today_summary"],
+        readiness_inputs.get("today_readiness"),
     )
 
     hrv = report["hrv"]
@@ -806,7 +813,9 @@ def render_weekplan_page() -> None:
 
     readiness_inputs = load_readiness(28)
     readiness = analysis.analyze_readiness(
-        readiness_inputs["history"], readiness_inputs["today_summary"]
+        readiness_inputs["history"],
+        readiness_inputs["today_summary"],
+        readiness_inputs.get("today_readiness"),
     )
 
     week_start = week["week_start"]
