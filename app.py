@@ -50,6 +50,32 @@ def get_secret(key: str, default: Optional[str] = None) -> Optional[str]:
         return default
 
 
+def _check_password() -> bool:
+    """Eenvoudig wachtwoord-slot voor de online (openbaar bereikbare) app.
+
+    Lokaal of zonder `app_password`-secret blijft alles open. Online beschermt
+    dit je Garmin-data + API-budget, ook al is de URL openbaar.
+    """
+    expected = get_secret("app_password")
+    if not expected:
+        return True
+    if st.session_state.get("_auth_ok"):
+        return True
+    st.title("🔒 Hardloopcoach")
+    pw = st.text_input("Wachtwoord", type="password")
+    if pw:
+        if pw == expected:
+            st.session_state["_auth_ok"] = True
+            st.rerun()
+        else:
+            st.error("Onjuist wachtwoord.")
+    return False
+
+
+if not _check_password():
+    st.stop()
+
+
 @st.cache_resource(show_spinner=False)
 def get_client() -> GarminClient:
     return GarminClient(
