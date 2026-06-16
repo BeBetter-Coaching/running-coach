@@ -569,6 +569,30 @@ def run_stats(activity: dict, hartslagzones: Optional[dict] = None) -> dict:
     }
 
 
+def run_splits(laps: list[dict]) -> list[dict]:
+    """Per-lap splits → tidy rijen (ronde, afstand, tempo, HS) voor de grafiek."""
+    rows = []
+    for i, lap in enumerate(laps or [], start=1):
+        dist = lap.get("distance") or 0
+        dur = lap.get("duration") or 0
+        if dist <= 0 or dur <= 0:
+            continue
+        spk = dur / (dist / 1000.0)
+        m, s = int(spk // 60), int(round(spk % 60))
+        if s == 60:
+            m, s = m + 1, 0
+        rows.append(
+            {
+                "ronde": i,
+                "afstand_km": round(dist / 1000.0, 2),
+                "tempo_sec": round(spk),
+                "tempo_label": f"{m}:{s:02d}/km",
+                "hartslag": round(lap["averageHR"]) if _is_num(lap.get("averageHR")) else None,
+            }
+        )
+    return rows
+
+
 def analyze_history(history: dict, end: Optional[date] = None) -> dict:
     """Bereken alle metrics uit een client.get_history()-resultaat."""
     end = end or date.today()

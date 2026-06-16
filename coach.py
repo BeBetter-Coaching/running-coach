@@ -415,7 +415,11 @@ RECAP_SYSTEM = (
 
 
 def run_recap(
-    stats: dict, planned_session: str, hartslagzones: Optional[dict], api_key: Optional[str]
+    stats: dict,
+    planned_session: str,
+    hartslagzones: Optional[dict],
+    api_key: Optional[str],
+    splits: Optional[list] = None,
 ) -> str:
     """Coach's take op de zojuist gelopen run (Opus, 1x per run)."""
     client = _client(api_key)
@@ -425,6 +429,16 @@ def run_recap(
         for z in (hz.get("zones") or [])
         if z.get("naam")
     )
+    splits_txt = ""
+    if splits and len(splits) >= 2:
+        regels = "; ".join(
+            f"{s['ronde']}: {s['tempo_label']} @ {s.get('hartslag', '?')}bpm" for s in splits
+        )
+        splits_txt = (
+            f"Splits per ronde (≈km): {regels}\n"
+            "Let op tempo-verloop vs. HS: koppelt de HS los van het tempo "
+            "(tempo zakt terwijl HS oploopt = vermoeidheid/decoupling)?\n"
+        )
     user = (
         "Gelopen training:\n"
         f"- {stats.get('naam')} · {stats.get('datum')}\n"
@@ -432,7 +446,8 @@ def run_recap(
         f"- gem HS {stats.get('avg_hr')} ({stats.get('zone')}), max {stats.get('max_hr')}, "
         f"cadans {stats.get('cadans')}\n"
         f"- Training Effect aeroob {stats.get('aerobic_te')} / anaeroob "
-        f"{stats.get('anaerobic_te')}, belasting {stats.get('training_load')}\n\n"
+        f"{stats.get('anaerobic_te')}, belasting {stats.get('training_load')}\n"
+        f"{splits_txt}\n"
         f"Gepland voor die dag: {planned_session or '(geen plan bekend)'}\n"
         f"Zijn HS-zones: {zones or '(onbekend)'}\n\n"
         "Schrijf de coach's take."

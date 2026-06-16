@@ -317,6 +317,17 @@ class GarminClient:
             lambda: self._api_or_raise().get_activities_by_date(start_str, end_str),
         )
 
+    def get_activity_splits(self, activity_id) -> MetricResult:
+        # Per-lap splits (bij auto-lap ~ per km). Gecachet op activity-id: een
+        # afgeronde activiteit verandert niet meer, dus permanente cache is prima.
+        return self._fetch(
+            "splits",
+            str(activity_id),
+            lambda: (self._api_or_raise().get_activity_splits(activity_id) or {}).get(
+                "lapDTOs", []
+            ),
+        )
+
     def get_daily_metric(self, metric: str, date_str: str) -> MetricResult:
         dispatch = {
             "sleep": self.get_sleep,

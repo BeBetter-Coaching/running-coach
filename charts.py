@@ -84,6 +84,38 @@ def sleep_chart(sleep_by_date: dict[str, float]) -> Optional[alt.LayerChart]:
     return alt.layer(bars, avg, target).properties(height=240, width="container")
 
 
+def splits_chart(splits: list[dict]) -> Optional[alt.LayerChart]:
+    """Per-km splits: tempo als balk + hartslag als lijn (dubbele as)."""
+    rows = [s for s in splits or [] if s.get("tempo_sec")]
+    if len(rows) < 2:
+        return None
+    df = pd.DataFrame(rows)
+    base = alt.Chart(df).encode(
+        x=alt.X("ronde:O", title="ronde (≈ km)", axis=alt.Axis(labelAngle=0))
+    )
+    tempo = base.mark_line(color=CYAN, strokeWidth=2.5, point=True).encode(
+        y=alt.Y(
+            "tempo_sec:Q",
+            title="tempo (sneller ↑)",
+            scale=alt.Scale(zero=False, reverse=True),
+            axis=alt.Axis(labelExpr="floor(datum.value/60) + ':' + format(datum.value%60, '02')"),
+        ),
+        tooltip=[
+            alt.Tooltip("ronde:O", title="Ronde"),
+            alt.Tooltip("tempo_label:N", title="Tempo"),
+            alt.Tooltip("hartslag:Q", title="HS (bpm)"),
+        ],
+    )
+    hs = base.mark_line(color=GOLD, strokeWidth=2, point=True, strokeDash=[4, 2]).encode(
+        y=alt.Y("hartslag:Q", title="HS (bpm)", scale=alt.Scale(zero=False)),
+    )
+    return (
+        alt.layer(tempo, hs)
+        .resolve_scale(y="independent")
+        .properties(height=240, width="container")
+    )
+
+
 def weekly_bar(weeks: list[dict], key: str, title: str, color: str = CYAN) -> Optional[alt.Chart]:
     if not weeks:
         return None

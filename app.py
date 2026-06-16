@@ -103,6 +103,13 @@ def load_readiness(days: int = 28) -> dict:
     return get_client().get_readiness_inputs(days=days)
 
 
+@st.cache_resource(ttl=86400, show_spinner=False)
+def load_splits(activity_id) -> list:
+    # Splits van een afgeronde run veranderen niet meer → lange TTL.
+    res = get_client().get_activity_splits(activity_id)
+    return res.data or []
+
+
 # Bij een nieuwe dag automatisch verse data: wis de caches + dagelijkse AI-uitvoer
 # de eerste keer dat de app op een nieuwe kalenderdag draait. Zo is 's ochtends
 # alles vers zonder dat je iets hoeft te klikken.
@@ -364,6 +371,13 @@ def render_today_page() -> None:
         )
         st.caption(meta)
 
+        # Splits-grafiek (tempo + HS per ronde) — alleen als er ≥2 laps zijn.
+        splits = analysis.run_splits(load_splits(stats["activity_id"]))
+        sp_chart = charts.splits_chart(splits)
+        if sp_chart is not None:
+            st.caption("Tempo (blauw, sneller = hoger) vs. hartslag (goud) per ronde")
+            st.altair_chart(sp_chart, width="stretch")
+
         recap_key = f"recap_{stats['activity_id']}"
         if api_key:
             if recap_key not in st.session_state:
@@ -383,7 +397,7 @@ def render_today_page() -> None:
                 with st.spinner("Coach kijkt naar je run…"):
                     try:
                         st.session_state[recap_key] = run_recap(
-                            stats, planned, plan.get("hartslagzones", {}), api_key
+                            stats, planned, plan.get("hartslagzones", {}), api_key, splits
                         )
                     except CoachError as e:
                         st.session_state[recap_key] = ""
