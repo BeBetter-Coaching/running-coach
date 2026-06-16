@@ -403,6 +403,58 @@ def adjust_today(session_text: str, readiness: dict, plan: dict, api_key: Option
     return text or "Ga zoals gepland."
 
 
+RECAP_SYSTEM = (
+    "Je bent de hardloopcoach van Jip en schrijft een korte recap van de training "
+    "die hij zojuist gelopen heeft — de 'coach's take'. Formaat:\n"
+    "Regel 1: ÉÉN korte oordeel-kop, vetgedrukt, bv. **Rustige hersteljog — netjes in Z1**.\n"
+    "Daarna 2-4 zinnen: hoe ging het t.o.v. wat gepland stond en t.o.v. zijn "
+    "hartslagzones, plus één concreet punt (compliment of let-op).\n"
+    "Hij traint op HARTSLAG: duid in zijn zones en in bpm, niet in tempo-oordelen. "
+    "Nederlands, direct, eerlijk, geen emoji, geen opsomming, geen kopjes."
+)
+
+
+def run_recap(
+    stats: dict, planned_session: str, hartslagzones: Optional[dict], api_key: Optional[str]
+) -> str:
+    """Coach's take op de zojuist gelopen run (Opus, 1x per run)."""
+    client = _client(api_key)
+    hz = hartslagzones or {}
+    zones = "; ".join(
+        f"{z.get('naam')} {z.get('laag')}-{z.get('hoog')}"
+        for z in (hz.get("zones") or [])
+        if z.get("naam")
+    )
+    user = (
+        "Gelopen training:\n"
+        f"- {stats.get('naam')} · {stats.get('datum')}\n"
+        f"- {stats.get('afstand_km')} km in {stats.get('tijd')}, tempo {stats.get('tempo')}\n"
+        f"- gem HS {stats.get('avg_hr')} ({stats.get('zone')}), max {stats.get('max_hr')}, "
+        f"cadans {stats.get('cadans')}\n"
+        f"- Training Effect aeroob {stats.get('aerobic_te')} / anaeroob "
+        f"{stats.get('anaerobic_te')}, belasting {stats.get('training_load')}\n\n"
+        f"Gepland voor die dag: {planned_session or '(geen plan bekend)'}\n"
+        f"Zijn HS-zones: {zones or '(onbekend)'}\n\n"
+        "Schrijf de coach's take."
+    )
+    try:
+        response = client.messages.create(
+            model=MODEL_DUIDING,
+            max_tokens=600,
+            thinking={"type": "adaptive"},
+            output_config={"effort": "medium"},
+            system=RECAP_SYSTEM,
+            messages=[{"role": "user", "content": user}],
+        )
+    except anthropic.AuthenticationError:
+        raise CoachError("Anthropic API-key ongeldig. Controleer `anthropic_api_key`.")
+    except anthropic.RateLimitError:
+        raise CoachError("Anthropic rate limit bereikt. Probeer het zo opnieuw.")
+    except anthropic.APIError as e:
+        raise CoachError(f"Anthropic API-fout: {e}")
+    return "".join(b.text for b in response.content if b.type == "text").strip()
+
+
 def _client(api_key: Optional[str]) -> anthropic.Anthropic:
     if not api_key:
         raise CoachError(

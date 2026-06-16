@@ -521,6 +521,54 @@ def compliance_review_text(comp: dict) -> str:
     )
 
 
+def latest_run(activities: list[dict]) -> Optional[dict]:
+    """De meest recente hardloop-activiteit (of None)."""
+    runs = [
+        a for a in activities or [] if "run" in (_dig(a, "activityType", "typeKey", default="") or "")
+    ]
+    if not runs:
+        return None
+    return max(runs, key=lambda a: a.get("startTimeLocal", ""))
+
+
+def _fmt_time(seconds) -> str:
+    s = int(seconds or 0)
+    h, m, sec = s // 3600, (s % 3600) // 60, s % 60
+    return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
+
+
+def _fmt_pace(distance_m, duration_s) -> str:
+    if not distance_m or not duration_s:
+        return "—"
+    spk = duration_s / (distance_m / 1000.0)
+    m, s = int(spk // 60), int(round(spk % 60))
+    if s == 60:
+        m, s = m + 1, 0
+    return f"{m}:{s:02d}/km"
+
+
+def run_stats(activity: dict, hartslagzones: Optional[dict] = None) -> dict:
+    """Kant-en-klare cijfers van één run voor de recap-kaart."""
+    zones = (hartslagzones or {}).get("zones", [])
+    avg_hr = round(activity["averageHR"]) if _is_num(activity.get("averageHR")) else None
+    cad = activity.get("averageRunningCadenceInStepsPerMinute")
+    return {
+        "naam": activity.get("activityName", ""),
+        "datum": (activity.get("startTimeLocal") or "")[:16],
+        "afstand_km": round((activity.get("distance") or 0) / 1000, 2),
+        "tijd": _fmt_time(activity.get("duration")),
+        "tempo": _fmt_pace(activity.get("distance"), activity.get("duration")),
+        "avg_hr": avg_hr,
+        "max_hr": round(activity["maxHR"]) if _is_num(activity.get("maxHR")) else None,
+        "zone": _zone_for_hr(avg_hr, zones),
+        "cadans": round(cad) if _is_num(cad) else None,
+        "training_load": round(float(activity.get("activityTrainingLoad") or 0), 1),
+        "aerobic_te": round(float(activity.get("aerobicTrainingEffect") or 0), 1),
+        "anaerobic_te": round(float(activity.get("anaerobicTrainingEffect") or 0), 1),
+        "activity_id": activity.get("activityId"),
+    }
+
+
 def analyze_history(history: dict, end: Optional[date] = None) -> dict:
     """Bereken alle metrics uit een client.get_history()-resultaat."""
     end = end or date.today()

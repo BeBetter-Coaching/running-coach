@@ -30,6 +30,7 @@ from coach import (
     build_flags,
     daily_readiness_advice,
     readiness_template,
+    run_recap,
     CoachError,
 )
 
@@ -336,6 +337,61 @@ def render_today_page() -> None:
                     st.info(f"🔧 Bijsturing: {st.session_state[adj_key]}")
             else:
                 st.caption("Voeg `anthropic_api_key` toe voor dagelijkse bijsturing.")
+
+    # ----- Recap van je laatste run (coach's take) ------------------------- #
+    activities = analysis.activities_list(inputs["history"])
+    latest = analysis.latest_run(activities)
+    if latest:
+        plan = store.load_plan(athlete_key, gh_token) if athlete_key else {}
+        stats = analysis.run_stats(latest, plan.get("hartslagzones"))
+        st.subheader("🏃 Je laatste run")
+        rc = st.columns(4)
+        rc[0].metric("Afstand", f"{stats['afstand_km']} km")
+        rc[1].metric("Tijd", stats["tijd"])
+        rc[2].metric("Tempo", stats["tempo"])
+        rc[3].metric(
+            "Gem. HS",
+            f"{stats['avg_hr']} bpm" if stats["avg_hr"] else "—",
+            delta=stats["zone"] or None,
+            delta_color="off",
+        )
+        meta = f"{stats['naam']} · {stats['datum']}"
+        if stats["cadans"]:
+            meta += f" · {stats['cadans']} spm"
+        meta += (
+            f" · TE {stats['aerobic_te']}/{stats['anaerobic_te']}"
+            f" · belasting {stats['training_load']}"
+        )
+        st.caption(meta)
+
+        recap_key = f"recap_{stats['activity_id']}"
+        if api_key:
+            if recap_key not in st.session_state:
+                run_date = stats["datum"][:10]
+                planned = ""
+                if athlete_key and run_date:
+                    try:
+                        rd = date.fromisoformat(run_date)
+                        rmon = (rd - timedelta(days=rd.weekday())).isoformat()
+                        rwp = store.load_weekplan(athlete_key, rmon, gh_token)
+                        pdag = next(
+                            (d for d in rwp.get("dagen", []) if d.get("datum") == run_date), None
+                        )
+                        planned = pdag.get("sessie", "") if pdag else ""
+                    except Exception:
+                        planned = ""
+                with st.spinner("Coach kijkt naar je run…"):
+                    try:
+                        st.session_state[recap_key] = run_recap(
+                            stats, planned, plan.get("hartslagzones", {}), api_key
+                        )
+                    except CoachError as e:
+                        st.session_state[recap_key] = ""
+                        st.caption(f"(coach's take niet beschikbaar: {e})")
+            if st.session_state.get(recap_key):
+                st.markdown(st.session_state[recap_key])
+        else:
+            st.caption("Voeg `anthropic_api_key` toe voor de coach's take op je run.")
 
     with st.expander("ℹ️ Wat betekent dit stoplicht?"):
         st.markdown(
