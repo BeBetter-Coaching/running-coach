@@ -204,8 +204,9 @@ def render_raw(label: str, result) -> None:
 st.sidebar.title("🏃 Hardloopcoach")
 page = st.sidebar.radio(
     "Weergave",
-    ["🟢 Vandaag", "📈 Dashboard", "🎯 Planning", "🗓️ Weekplan", "🧠 Coach-rapport", "📊 Ruwe data (7 dagen)"],
+    ["🟢 Vandaag", "📅 Deze week", "🧠 Coach", "⚙️ Profiel"],
 )
+show_raw = st.sidebar.toggle("🔧 Ruwe data (debug)", value=False)
 
 if st.sidebar.button("🔄 Data verversen (vandaag)"):
     try:
@@ -380,8 +381,17 @@ def render_today_page() -> None:
 # --------------------------------------------------------------------------- #
 # Pagina: Dashboard (grafieken)
 # --------------------------------------------------------------------------- #
-def render_dashboard_page() -> None:
-    st.title("Dashboard")
+# --------------------------------------------------------------------------- #
+# Pagina: Coach — lange lijn (periodisering + trends + wekelijks oordeel)
+# --------------------------------------------------------------------------- #
+def render_coach_page() -> None:
+    st.title("Coach")
+    st.caption("De lange lijn: je periodisering, trends en het wekelijkse coach-oordeel.")
+
+    gh_token = get_secret("GH_TOKEN")
+    athlete_key = get_secret("fs_user_key")
+    api_key = get_secret("anthropic_api_key")
+
     history = load_history(28)
     report = analysis.analyze_history(history)
     readiness_inputs = load_readiness(28)
@@ -390,6 +400,7 @@ def render_dashboard_page() -> None:
         readiness_inputs["today_summary"],
         readiness_inputs.get("today_readiness"),
     )
+    plan = store.load_plan(athlete_key, gh_token) if athlete_key else {}
 
     hrv = report["hrv"]
     acwr = report["acwr"]
@@ -399,7 +410,7 @@ def render_dashboard_page() -> None:
     )
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Readiness vandaag", light_txt)
+    c1.metric("Readiness", light_txt)
     if hrv.get("available"):
         c2.metric(
             "HRV",
@@ -415,104 +426,66 @@ def render_dashboard_page() -> None:
     )
     c4.metric("Volume (7d)", fmt(weeks[0]["km"] if weeks else None, " km"))
 
+    # ----- Periodisering-skelet (lange lijn naar je races) ----------------- #
     st.divider()
-    st.subheader("HRV-trend — met je baseline-band")
-    ch = charts.hrv_chart(
-        analysis.hrv_series(history), hrv.get("baseline_mean"), hrv.get("baseline_sd")
-    )
-    chart_or_caption(ch, "Nog geen HRV-data.")
+    st.subheader("📈 Periodisering — skelet tot je laatste race")
+    if not plan.get("races"):
+        st.caption("Voeg races toe op de ⚙️ Profiel-pagina om het skelet te genereren.")
+    else:
+        cur_km = round(sum(w["km"] for w in weeks) / len(weeks)) if weeks else 90
+        sk = planner.build_skeleton(plan, cur_km)
+        st.caption(f"Basisvolume uit Garmin (~4 wk gem.): {sk['base_km']} km.")
+        st.dataframe(
+            [
+                {
+                    "week vanaf": w["week_start"],
+                    "fase": w["fase"],
+                    "doel km": w["doel_km"],
+                    "focus": w["focus"],
+                    "races": ", ".join(w["races"]),
+                }
+                for w in sk["weken"]
+            ],
+            width="stretch",
+            hide_index=True,
+        )
 
+    # ----- Trends (28 dagen) ----------------------------------------------- #
+    st.divider()
+    st.subheader("Trends — laatste 28 dagen")
+    chart_or_caption(
+        charts.hrv_chart(analysis.hrv_series(history), hrv.get("baseline_mean"), hrv.get("baseline_sd")),
+        "Nog geen HRV-data.",
+    )
     col_a, col_b = st.columns(2)
     with col_a:
-        st.subheader("Slaap per nacht")
+        st.caption("Slaap per nacht")
         chart_or_caption(charts.sleep_chart(analysis.sleep_hours_series(history)), "Nog geen slaapdata.")
     with col_b:
-        st.subheader("Opbouw — belasting vs. je normale week")
+        st.caption("Belasting vs. je normale week")
         render_load_meter(acwr.get("acwr"))
-
-    st.subheader("Volume per week")
     col_c, col_d = st.columns(2)
     with col_c:
         chart_or_caption(charts.weekly_bar(weeks, "km", "Afstand (km)", charts.CYAN))
     with col_d:
         chart_or_caption(charts.weekly_bar(weeks, "training_load", "Trainingsbelasting", charts.GOLD))
 
-
-# --------------------------------------------------------------------------- #
-# Pagina: Coach-rapport (Fase 2)
-# --------------------------------------------------------------------------- #
-def render_coach_page() -> None:
-    st.title("Wekelijks coach-rapport")
-    st.caption("Berekend in Python, geduid door de AI-coach. Cijfers over ~28 dagen.")
-
-    history = load_history(28)
-    report = analysis.analyze_history(history)
-
-    # Readiness van vandaag erbij, zodat het advies daarop aansluit (en niet
-    # de "Vandaag"-pagina tegenspreekt).
-    readiness_inputs = load_readiness(28)
-    readiness = analysis.analyze_readiness(
-        readiness_inputs["history"],
-        readiness_inputs["today_summary"],
-        readiness_inputs.get("today_readiness"),
-    )
-
-    hrv = report["hrv"]
-    sleep = report["sleep"]
-    acwr = report["acwr"]
-
-    c1, c2, c3, c4 = st.columns(4)
-    if hrv.get("available"):
-        c1.metric(
-            "HRV (laatste nacht)",
-            fmt(hrv["current"]),
-            delta=fmt(hrv["deviation_from_baseline"]) + " vs baseline",
-            delta_color="off",
-        )
-    c2.metric("Slaap (7d gem.)", fmt(sleep.get("avg_7d_h"), " u"))
-    c3.metric("ACWR", fmt(acwr.get("acwr")), help=acwr.get("zone", ""))
-    weeks = report["volume"]["weeks"]
-    c4.metric("Volume (7d)", fmt(weeks[0]["km"] if weeks else None, " km"))
-
-    # Weekvolume-tabel
-    st.subheader("Volume per week")
-    st.dataframe(
-        [
-            {
-                "periode": w["label"],
-                "afstand (km)": w["km"],
-                "trainingsbelasting": w["training_load"],
-                "runs": w["runs"],
-            }
-            for w in weeks
-        ],
-        width="stretch",
-        hide_index=True,
-    )
-
-    # Pre-filter aandachtspunten (gratis Python)
-    st.subheader("Signalen (drempelwaarden)")
+    # ----- Wekelijks coach-oordeel (AI) ------------------------------------ #
+    st.divider()
+    st.subheader("🧠 Wekelijks coach-oordeel")
     for f in build_flags(report, readiness):
         st.markdown(f"- {f}")
 
-    st.divider()
-
-    # AI-duiding (dure call: achter een knop, gecachet per dag in de sessie)
-    api_key = get_secret("anthropic_api_key")
     state_key = f"coach_report_{report['end_date']}"
-
-    col_a, col_b = st.columns([1, 3])
-    generate = col_a.button("🧠 Genereer coach-rapport", type="primary")
-    if col_b.button("↻ Opnieuw genereren"):
+    col_x, col_y = st.columns([1, 3])
+    generate = col_x.button("Genereer oordeel", type="primary")
+    if col_y.button("↻ Opnieuw genereren"):
         st.session_state.pop(state_key, None)
         generate = True
 
     if generate and state_key not in st.session_state:
         if not api_key:
-            st.warning(
-                "Nog geen Anthropic API-key. Zet `anthropic_api_key` in je secrets "
-                "om het AI-rapport te genereren. De cijfers hierboven werken al."
-            )
+            st.warning("Zet `anthropic_api_key` in je secrets om het oordeel te genereren.")
         else:
             with st.spinner("De coach denkt na over je cijfers…"):
                 try:
@@ -528,7 +501,7 @@ def render_coach_page() -> None:
     with st.expander("Berekende cijfers (ruwe input voor de AI)", expanded=False):
         st.json(report, expanded=False)
 
-    # ----- Publiceren naar BeBetter (jouw eigen dossier) ------------------- #
+    # ----- Publiceren naar Coachingsapp (jouw eigen dossier) --------------- #
     st.divider()
     with st.expander("📤 Publiceer naar Coachingsapp (jouw dossier)", expanded=False):
         st.caption(
@@ -648,7 +621,7 @@ _DEFAULT_ZONES = [
 
 
 def render_planning_page() -> None:
-    st.title("Planning & profiel")
+    st.title("Profiel")
     st.caption(
         "Je races, kalender en voorkeuren — de basis waarop de coach straks je "
         "periodisering (lange termijn) en weekschema's (korte termijn) maakt."
@@ -761,38 +734,7 @@ def render_planning_page() -> None:
             st.error(f"Opslaan mislukt: {msg}")
     if plan.get("updated_at"):
         st.caption(f"Laatst opgeslagen: {plan['updated_at']}")
-
-    # ----- Periodisering-skelet (Fase B) — leeft mee met wat je hierboven invult #
-    st.divider()
-    st.subheader("📈 Periodisering — skelet tot je laatste race")
-    if not live_plan["races"]:
-        st.caption("Voeg races met een datum toe om het skelet te genereren.")
-    else:
-        try:
-            wv = analysis.analyze_history(load_history(28))["volume"]["weeks"]
-            cur_km = round(sum(w["km"] for w in wv) / len(wv)) if wv else 60
-        except Exception:
-            cur_km = 60
-        sk = planner.build_skeleton(live_plan, cur_km)
-        st.caption(
-            f"Basisvolume uit Garmin (~4 wk gem.): {sk['base_km']} km. Fase, doel-km "
-            "en focus per week — de basis voor je concrete weken (Fase C)."
-        )
-        st.dataframe(
-            [
-                {
-                    "week vanaf": w["week_start"],
-                    "fase": w["fase"],
-                    "doel km": w["doel_km"],
-                    "focus": w["focus"],
-                    "races": ", ".join(w["races"]),
-                    "notitie": w["notitie"],
-                }
-                for w in sk["weken"]
-            ],
-            width="stretch",
-            hide_index=True,
-        )
+        st.caption("Je periodisering (skelet tot je races) staat op de 🧠 Coach-pagina.")
 
 
 # --------------------------------------------------------------------------- #
@@ -809,8 +751,8 @@ def _render_weekplan(wp: dict) -> None:
 
 
 def render_weekplan_page() -> None:
-    st.title("Weekplan")
-    st.caption("De concrete week — jouw stramien per fase, in hartslag, met je readiness erin.")
+    st.title("Deze week")
+    st.caption("Je concrete week — jouw stramien per fase, in hartslag — plus de terugblik.")
     gh_token = get_secret("GH_TOKEN")
     athlete_key = get_secret("fs_user_key")
     api_key = get_secret("anthropic_api_key")
@@ -921,15 +863,13 @@ def render_weekplan_page() -> None:
 # --------------------------------------------------------------------------- #
 # Router
 # --------------------------------------------------------------------------- #
-if page.startswith("🟢"):
+if show_raw:
+    render_raw_page()
+elif page.startswith("🟢"):
     render_today_page()
-elif page.startswith("📈"):
-    render_dashboard_page()
-elif page.startswith("🎯"):
-    render_planning_page()
-elif page.startswith("🗓️"):
+elif page.startswith("📅"):
     render_weekplan_page()
 elif page.startswith("🧠"):
     render_coach_page()
 else:
-    render_raw_page()
+    render_planning_page()
