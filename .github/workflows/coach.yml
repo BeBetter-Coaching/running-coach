@@ -1,0 +1,34 @@
+name: Coach (automatisch)
+
+# Draait de hardloopcoach vanzelf: dagelijks readiness + recap van je laatste run,
+# en op maandag het volledige weekoordeel. Publiceert naar je BeBetter-app.
+# Geheimen staan in de repo-secrets (Settings → Secrets and variables → Actions),
+# niet in deze code.
+
+on:
+  schedule:
+    - cron: "30 5 * * *" # 05:30 UTC = 07:30 NL (zomertijd) elke ochtend
+  workflow_dispatch: {} # handmatig starten via de Actions-tab
+
+concurrency:
+  group: coach
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Coach draaien en publiceren
+        env:
+          GARMIN_TOKEN_B64: ${{ secrets.GARMIN_TOKEN_B64 }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          FS_USER_KEY: ${{ secrets.FS_USER_KEY }}
+        run: python automation.py

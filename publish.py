@@ -52,6 +52,7 @@ def build_athlete_state(
     readiness: Optional[dict] = None,
     weekly_metrics: Optional[dict] = None,
     weekly_report_md: Optional[str] = None,
+    run_recap: Optional[dict] = None,
 ) -> dict:
     """Bouw het 'briefje' dat naar BeBetter gaat: één compacte, leesbare staat."""
     return {
@@ -59,6 +60,7 @@ def build_athlete_state(
         "updated_at": datetime.now().isoformat(timespec="seconds"),
         "source": "running-coach",
         "readiness": readiness or {},
+        "laatste_run": run_recap or {},
         "weekly": {
             "metrics": weekly_metrics or {},
             "report_md": weekly_report_md or "",
